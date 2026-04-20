@@ -2,7 +2,7 @@ clc
 clear all
 
 % Hálózat összeállítása
-[nodes, edges, slacknodename, slacknodeid, noslacknodesname] = build_network_data();
+[nodes, edges, slacknodename, slacknodeid, noslacknodesname] = build_network(); %[output:35b4763d]
 
 % Mátrixok és számolt mennyiségek
 results = matrices(nodes, edges, slacknodeid);
@@ -36,6 +36,15 @@ zonetozonePTDF = results.zonetozonePTDF;
 outageline = results.outageline;
 outageid = results.outageid;
 LODF = results.LODF;
+
+% Virtuális kapacitás
+vircap = compute_virtual_capacity(nodes, edges, zonenames, zonetoslackPTDF, Fr);
+
+zoneNP = vircap.zoneNP;
+zoneNP_table = vircap.zoneNP_table;
+F0 = vircap.F0;
+edges = vircap.edges;
+ram_table = vircap.ram_table;
 
 % Hálózat alaprajza
 plot_network(nodes, edges, slacknodename, 'Mintahálózat');
@@ -96,4 +105,7 @@ plot_edge_values(nodes, edges, flowaftout, slacknodename, ...
 %---
 %[metadata:view]
 %   data: {"layout":"onright"}
+%---
+%[output:35b4763d]
+%   data: {"dataType":"error","outputData":{"errorType":"runtime","text":"build_network is not found in the current folder or on the MATLAB path, but exists in:\n    C:\\Users\\User.DESKTOP-6DG3TDS\\Documents\\MATLAB\\FlowBased_Matlab\\gsk_dolgozat_minta\n\n<a href = \"matlab:internal.matlab.desktop.commandwindow.executeCommandForUser('cd ''C:\\Users\\User.DESKTOP-6DG3TDS\\Documents\\MATLAB\\FlowBased_Matlab\\gsk_dolgozat_minta''')\">Change the MATLAB current folder<\/a> or <a href = \"matlab:internal.matlab.desktop.commandwindow.executeCommandForUser('addpath ''C:\\Users\\User.DESKTOP-6DG3TDS\\Documents\\MATLAB\\FlowBased_Matlab\\gsk_dolgozat_minta''')\">add its folder to the MATLAB path<\/a>."}}
 %---
