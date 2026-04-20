@@ -217,7 +217,7 @@ plot_edge_values(nodes, edges, flowaftout, slacknodename, ... %[output:group:7e9
     sprintf('%s kiesése utáni áramlások', outageline)); %[output:group:7e9ea465] %[output:8dccc610]
 
 
-% Flow a dokumentum szerinti képlettel
+% Áramlás kereskedelem nélkül
 plot_edge_values(nodes, edges, edges.F0, slacknodename, ... %[output:group:55c85edc] %[output:403b4b66]
     'Áramlás kereskedelem nélkül (F0)'); %[output:group:55c85edc] %[output:403b4b66]
 
