@@ -1,7 +1,7 @@
 clc
 clear all
 
-
+%% Configure network
 % Csomóponti table
 nodesname = ["N1"; "N2"; "N3"; "N4"; "N5"; "N6"; "N7"; "N8"; "N9"; "N10"; "N11"; "N12"; "N13"; "N14"; "N15"];
 nodesnp = [190; 70; -80; -60; 200; -40; -130; 0; 120; 130; -150; 60; -170; 40; -120];
@@ -15,24 +15,27 @@ nodes = table(nodesname, nodesnp, nodesx, nodesy, nodezone, 'VariableNames', {'N
 % Vezeték table
 edgesname = ["L1"; "L2"; "L3"; "L4"; "L5"; "L6"; "L7"; "L8"; "L9"; "L10"; "L11"; "L12"; "L13"; "L14"; "L15"; "L16"; "L17"; "L18"; "L19"; "L20"; "L21"; "L22"];
 edgeslength = [150; 125; 175; 160; 100; 170; 140; 115; 145; 210; 180; 215; 135; 130; 230; 155; 150; 160; 165; 155; 145; 235];
-edgesohm = 0.4 * edgeslength;
+edgesohm = 0.4 * edgeslength; % reaktancia, inkább 0.3
 edgesfrom = ["N1"; "N2"; "N3"; "N4"; "N6"; "N3"; "N3"; "N2"; "N5"; "N1"; "N8"; "N8"; "N9"; "N10"; "N11"; "N10"; "N9"; "N13"; "N6"; "N7"; "N14"; "N12"];
 edgesto   = ["N2"; "N3"; "N4"; "N7"; "N7"; "N6"; "N5"; "N5"; "N9"; "N8"; "N9"; "N11"; "N10"; "N11"; "N12"; "N12"; "N13"; "N12"; "N13"; "N14"; "N15"; "N15"];
-edgesfmax = 170 * ones(numel(edgesname),1);  
-edgesfrm  = 5 * ones(numel(edgesname),1);    
+edgesfmax = 170 * ones(numel(edgesname),1);  % ez majd sqrt(3)*400*2000 A legyen később, de példának jó így is
+edgesfrm  = 5 * ones(numel(edgesname),1); % inkább 10%*Fmax   
 
 edges = table(edgesname, edgesohm, edgesfrom, edgesto, edgesfmax, edgesfrm, 'VariableNames', {'EdgeName', 'Ohm', 'From', 'To', 'Fmax', 'FRM'});
 
 % Slack csomópont
 slacknodename = "N10";
 slacknodeid = find(nodes.NodeName == slacknodename);
-sumnp = sum(nodes.NP) - nodes{slacknodeid, "NP"};
+%Az alábbi 3 sor szerintem nem kell, ne változtasd a nettó pozíciót, ne
+%legyen slack függő
+sumnp = sum(nodes.NP) - nodes{slacknodeid, "NP"};  
 slacknodenp = -sumnp;
-nodes.NP(slacknodeid) = slacknodenp;
+%nodes.NP(slacknode_index) = slacknodenp;
 
 noslacknodesname = nodes.NodeName;
 noslacknodesname(slacknodeid) = [];
 
+%% Build A, Y, PTDF matrices
 % Illeszkedési mátrix
 A = zeros(height(edges), height(nodes));
 
@@ -44,6 +47,8 @@ for k = 1:height(edges)
 end
 
 A(:,slacknodeid) = [];
+%mik ezek az outputok?
+
 A_table = array2table(A, "RowNames", edgesname, "VariableNames", noslacknodesname) %[output:4d0b506a]
 
 % Vezeték admittancia mátrix
@@ -58,7 +63,6 @@ Y_table = array2table(Y, "VariableNames", noslacknodesname, "RowNames", noslackn
 nodetoslackPTDF = Yline * A / Y;
 nodetoslackPTDF_table = array2table(nodetoslackPTDF, 'VariableNames', noslacknodesname, 'RowNames', edgesname) %[output:44f14b66]
 
-% Referencia flow (a nem slack csomópontokra)
 np = nodes.NP;
 np(slacknodeid) = [];
 Fr = nodetoslackPTDF * np;
@@ -75,7 +79,9 @@ ntncolname = sprintf("%s->%s", nodefrom, nodeto);
 nodetonodePTDF = nodetoslackPTDF(:, fromid) - nodetoslackPTDF(:, toid);
 nodetonodePTDF_table = array2table(nodetonodePTDF, "RowNames", edgesname, "VariableNames", ntncolname) %[output:5f70c580]
 
-% GSK (egyenletes)
+
+%% Create reference flow
+%% Create GSK (egyenletes) and zone PTDFs
 zonenames = ["A","B","C","D"];
 zonenum = numel(zonenames);
 
@@ -119,7 +125,7 @@ end
 zoneNP_table = table(zonenames', zoneNP, ...
     'VariableNames', {'Zone', 'ZoneNP_ref'});
 
-
+%% ZERO BALANCE és VIRTUÁLIS KAPACITÁS SZÁMÍTÁS
 % Kereskedelem nélküli maradékáramlás:
 % F0 = Fref - (nodetoslackPTDF * GSK) * zoneNP
 % F0 = Fref - zonetoslackPTDF * zoneNP
@@ -137,7 +143,7 @@ edges.finalRAM = edges.RAM + edges.AMR;
 
 ram_table = edges(:, {'EdgeName','Flowref','F0','Fmax','FRM','RAM','minRAM','AMR','finalRAM'}) %[output:10189f4d]
 
-% LODF
+%% LODF
 outageline = "L22";
 outageid = find(edges.EdgeName == outageline);
 LODF = zeros(height(edges),height(edges));
@@ -160,6 +166,7 @@ LODF_table = array2table(LODF, "RowNames", edgesname, "VariableNames", edgesname
 % oszlopban az adott kieső vezeték
 % sorban a kieső vezeték hatása az adott vezetékre
 
+%% ÁBRÁK
 
 % Hálózat alaprajza
 plot_network(nodes, edges, slacknodename, 'Mintahálózat'); %[output:1b1b355e]
