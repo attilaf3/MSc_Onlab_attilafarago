@@ -39,11 +39,11 @@ noslacknodesname(slacknodeid) = [];
 % Illeszkedési mátrix
 A = zeros(height(edges), height(nodes));
 
-for k = 1:height(edges)
-    fromid = find(nodes.NodeName == edges.From(k));
-    toid = find(nodes.NodeName == edges.To(k));
-    A(k, fromid) = 1;
-    A(k, toid) = -1;
+for edge_idx = 1:height(edges)
+    src_nodeidx = find(nodes.NodeName == edges.From(edge_idx));
+    dst_nodeidx = find(nodes.NodeName == edges.To(edge_idx));
+    A(edge_idx, src_nodeidx) = 1;
+    A(edge_idx, dst_nodeidx) = -1;
 end
 
 A(:,slacknodeid) = [];
@@ -63,17 +63,12 @@ Y_table = array2table(Y, "VariableNames", noslacknodesname, "RowNames", noslackn
 nodetoslackPTDF = Yline * A / Y;
 nodetoslackPTDF_table = array2table(nodetoslackPTDF, 'VariableNames', noslacknodesname, 'RowNames', edgesname) %[output:44f14b66]
 
-np = nodes.NP;
-np(slacknodeid) = [];
-Fr = nodetoslackPTDF * np;
-edges.Flowref = Fr;
-
 % Node-to-Node PTDF (a nem slack csomópontokra)
 nodefrom = "N1";
 nodeto = "N5";
 
-fromid = find(noslacknodesname == nodefrom);
-toid   = find(noslacknodesname == nodeto);
+fromid = noslacknodesname == nodefrom;
+toid   = noslacknodesname == nodeto;
 
 ntncolname = sprintf("%s->%s", nodefrom, nodeto);
 nodetonodePTDF = nodetoslackPTDF(:, fromid) - nodetoslackPTDF(:, toid);
@@ -81,15 +76,19 @@ nodetonodePTDF_table = array2table(nodetonodePTDF, "RowNames", edgesname, "Varia
 
 
 %% Create reference flow
+np = nodes.NP;
+np(slacknodeid) = [];
+edges.Fref  = nodetoslackPTDF * np;
+
 %% Create GSK (egyenletes) and zone PTDFs
 zonenames = ["A","B","C","D"];
 zonenum = numel(zonenames);
 
 GSK = zeros(height(nodes), zonenum);
 
-for k = 1:zonenum
-    nodeid = find(nodes.Zone == zonenames(k));
-    GSK(nodeid,k) = 1 / numel(nodeid);
+for edge_idx = 1:zonenum
+    nodeid = find(nodes.Zone == zonenames(edge_idx));
+    GSK(nodeid,edge_idx) = 1 / numel(nodeid);
 end
 
 GSK(slacknodeid,:) = [];
@@ -117,9 +116,9 @@ ztzPTDF_table = array2table(zonetozonePTDF,"RowNames", edgesname,"VariableNames"
 % Egyes zónákban a nettó import/export (zónás nettó pozíció)
 zoneNP = zeros(zonenum,1);
 
-for k = 1:zonenum
-    nodeid = find(nodes.Zone == zonenames(k));
-    zoneNP(k) = sum(nodes.NP(nodeid));
+for edge_idx = 1:zonenum
+    nodeid = find(nodes.Zone == zonenames(edge_idx));
+    zoneNP(edge_idx) = sum(nodes.NP(nodeid));
 end
 
 zoneNP_table = table(zonenames', zoneNP, ...
@@ -129,36 +128,36 @@ zoneNP_table = table(zonenames', zoneNP, ...
 % Kereskedelem nélküli maradékáramlás:
 % F0 = Fref - (nodetoslackPTDF * GSK) * zoneNP
 % F0 = Fref - zonetoslackPTDF * zoneNP
-F0 = Fr - zonetoslackPTDF * zoneNP;
-edges.F0 = F0;
+edges.F0 = edges.Fref - zonetoslackPTDF * zoneNP;
 
 % RAM
-edges.RAM = edges.Fmax - edges.FRM - abs(edges.F0);
+edges.RAM0 = edges.Fmax - edges.FRM - edges.F0;
+
 
 % Minimum RAM követelmény
 Ramr = 0.70;
 edges.minRAM = Ramr * edges.Fmax;
-edges.AMR = max(edges.minRAM - edges.RAM, 0);
-edges.finalRAM = edges.RAM + edges.AMR;
+edges.AMR = max(edges.minRAM - edges.RAM0, 0);
+edges.finalRAM = edges.RAM0 + edges.AMR;
 
-ram_table = edges(:, {'EdgeName','Flowref','F0','Fmax','FRM','RAM','minRAM','AMR','finalRAM'}) %[output:10189f4d]
+ram_table = edges(:, {'EdgeName','Fref','F0','Fmax','FRM','RAM0','minRAM','AMR','finalRAM'}) %[output:10189f4d]
 
 %% LODF
 outageline = "L22";
 outageid = find(edges.EdgeName == outageline);
 LODF = zeros(height(edges),height(edges));
 nodetoslackPTDF_full = [nodetoslackPTDF(:,1:slacknodeid-1), zeros(size(nodetoslackPTDF,1), 1), nodetoslackPTDF(:,slacknodeid:end)];
-for k = 1:height(edges)
+for edge_idx = 1:height(edges)
 
-    from = edges.From(k);
-    to   = edges.To(k);
+    srcnode = edges.From(edge_idx);
+    dstnode   = edges.To(edge_idx);
 
-    fromid = find(nodesname == from);
-    toid   = find(nodesname == to);
+    fromid = nodesname == srcnode;
+    toid   = nodesname == dstnode;
 
     ptdf_ij = nodetoslackPTDF_full(:,fromid) - nodetoslackPTDF_full(:,toid);
-    LODF(:,k) = ptdf_ij / (1 - ptdf_ij(k));
-    LODF(k,k) = -1;
+    LODF(:,edge_idx) = ptdf_ij / (1 - ptdf_ij(edge_idx));
+    LODF(edge_idx,edge_idx) = -1;
 end
 
 
@@ -184,7 +183,7 @@ plot_edge_values(nodes, edges, flow_ntn, slacknodename, ... %[output:group:72d7a
 
 % Node-to-node PTDF után flow
 mw_ntn = 1;
-flow_ntn = Fr + mw_ntn * nodetonodePTDF;
+flow_ntn = edges.Fref + mw_ntn * nodetonodePTDF;
 plot_edge_values(nodes, edges, flow_ntn, slacknodename, ...  %[output:group:17bf202c] %[output:18bc1582]
     sprintf('Áramlás + %g MW node-to-node: %s -> %s', ...  %[output:18bc1582]
     mw_ntn, nodefrom, nodeto)); %[output:group:17bf202c] %[output:18bc1582]
@@ -195,7 +194,7 @@ plot_edge_values(nodes, edges, zonetoslackPTDF(:, zoneid_plot), slacknodename, .
 
 % Zone-to-slack áramlás egy kiválasztott zónára
 mw_zts = 1;
-flow_z2s = Fr + mw_zts * zonetoslackPTDF(:, zoneid_plot);
+flow_z2s = edges.Fref + mw_zts * zonetoslackPTDF(:, zoneid_plot);
 plot_edge_values(nodes, edges, flow_z2s, slacknodename, ... ] %[output:group:1bea31ab] %[output:7d6a5337]
     sprintf('Áramlás + %g MW zone-to-slack: %s -> slack', ...  %[output:7d6a5337]
     mw_zts, zoneplot)); %[output:group:1bea31ab] %[output:7d6a5337]
@@ -206,7 +205,7 @@ plot_edge_values(nodes, edges, zonetozonePTDF, slacknodename, ...  %[output:grou
 
 % Zone-to-zone áramlás adott zónából egy másik, megadott zónába
 mw_ztz = 1;
-flow_z2z = Fr + mw_ztz * zonetozonePTDF;
+flow_z2z = edges.Fref + mw_ztz * zonetozonePTDF;
 plot_edge_values(nodes, edges, flow_z2z, slacknodename, ...  %[output:group:1b3899e1] %[output:788e10ef]
     sprintf('Áramlás + %g MW zone-to-zone: %s -> %s', ...  %[output:788e10ef]
     mw_ztz, zonefrom, zoneto)); %[output:group:1b3899e1] %[output:788e10ef]
@@ -217,7 +216,7 @@ plot_lodf_case(nodes, edges, LODF(:, outageid), outageid, slacknodename, ... %[o
     sprintf('LODF együtthatók %s kiesése esetén', outageline));  %[output:group:9bc3cf8d] %[output:708ff5e7]
 
 % Kiesés utáni flow
-flowaftout = edges.Flowref + LODF(:, outageid) * edges.Flowref(outageid);
+flowaftout = edges.Fref + LODF(:, outageid) * edges.Fref(outageid);
 flowaftout(outageid) = 0;
 
 plot_edge_values(nodes, edges, flowaftout, slacknodename, ... %[output:group:7e9ea465] %[output:8dccc610]
@@ -229,7 +228,7 @@ plot_edge_values(nodes, edges, edges.F0, slacknodename, ... %[output:group:55c85
     'Áramlás kereskedelem nélkül (F0)'); %[output:group:55c85edc] %[output:403b4b66]
 
 % RAM az egyes vezetékeken
-plot_edge_values(nodes, edges, edges.RAM, slacknodename, ... %[output:group:5186cfb0] %[output:0e58ec38]
+plot_edge_values(nodes, edges, edges.RAM0, slacknodename, ... %[output:group:5186cfb0] %[output:0e58ec38]
     'RAM az egyes vezetékeken'); %[output:group:5186cfb0] %[output:0e58ec38]
 
 
