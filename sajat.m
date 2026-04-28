@@ -166,13 +166,19 @@ LODF_table = array2table(LODF, "RowNames", edgesname, "VariableNames", edgesname
 % sorban a kieső vezeték hatása az adott vezetékre
 
 %% ÁBRÁK
+edgetable = mergevars(edges,["From","To"],"NewVariableName","EndNodes");
+edgetable = movevars(edgetable,"EndNodes","Before",1);
 
+nodetable = renamevars(nodes,"NodeName","Name");
+G = digraph(edgetable,nodetable);
 % Hálózat alaprajza
-plot_network(nodes, edges, slacknodename, 'Mintahálózat'); %[output:1b1b355e]
+G.Nodes.Label = compose("%s\n%+.1f",string(G.Nodes.Name), G.Nodes.NP);
+G.Edges.Label = G.Edges.EdgeName;
+plot_network(G, slacknodename, 'Mintahálózat'); %[output:1b1b355e]
 
 % Eredeti (referencia) áramlás az éleken
-plot_edge_values(nodes, edges, Fr, slacknodename, ...  %[output:group:3a854c0a] %[output:8916ac02]
-    'Referencia áramlás az éleken'); %[output:group:3a854c0a] %[output:8916ac02]
+G.Edges.Label = compose("%s: %.1f",G.Edges.EdgeName, G.Edges.Fref);
+plot_network(G, slacknodename, 'Referencia áramlás az éleken'); %[output:1b1b355e]
 
 % Node-to-node PTDF
 mw_ntn = 1;
@@ -232,51 +238,38 @@ plot_edge_values(nodes, edges, edges.RAM0, slacknodename, ... %[output:group:518
     'RAM az egyes vezetékeken'); %[output:group:5186cfb0] %[output:0e58ec38]
 
 
-function plot_network(nodes, edges, slacknodename, figTitle)
-
-    G = digraph(cellstr(edges.From), cellstr(edges.To), ones(height(edges),1), cellstr(nodes.NodeName));
+function plot_network(G, slacknodename, figTitle)
 
     figure('Color','w')
-    p = plot(G, ...
-        'XData', nodes.X, ...
-        'YData', nodes.Y, ...
+    H = plot(G, ...
+        'XData', G.Nodes.X, ...
+        'YData', G.Nodes.Y, ...
+        'EdgeLabel', G.Edges.Label, ...
+        "NodeLabel", repelem("",numnodes(G)),...
+        'EdgeFontSize',9,...
+        'MarkerSize', 40, ...
         'LineWidth', 1.5, ...
         'ArrowSize', 12);        
 
-    p.NodeLabel = repmat({''}, height(nodes),1);
-    p.EdgeLabel = cellstr(edges.EdgeName);
-    
+   
     axis equal
     axis off
     title(figTitle, 'Interpreter','none')
 
-    hold on
+    nodeColors = get_zone_colors(G.Nodes.Zone);
 
-    nodeColors = get_zone_colors(nodes.Zone);
-
-    for node = 1:height(nodes)
-        if nodes.NodeName(node) == slacknodename
-            edgeColor = [0 0 0];
-            lw = 2.2;
+    for node = 1:numnodes(G)
+        if G.Nodes.Name(node) == slacknodename
+            highlight(H,node,"NodeColor",brighten(nodeColors(node,:),0.5));         
         else
-            edgeColor = [0.35 0.35 0.35];
-            lw = 1.2;
-        end
-
-        scatter(nodes.X(node), nodes.Y(node), 2300, ...
-            'MarkerFaceColor', nodeColors(node,:), ...
-            'MarkerEdgeColor', edgeColor, ...
-            'LineWidth', lw);
-
-        txt = sprintf('%s\nNP=%+.0f', nodes.NodeName(node), nodes.NP(node));
-        text(nodes.X(node), nodes.Y(node)+0.10, txt, ...
-            'HorizontalAlignment','center', ...
-            'FontWeight','bold', ...
-            'FontSize',9, ...
-            'Interpreter','none');
+            highlight(H,node,"NodeColor",nodeColors(node,:));            
+        end       
     end
+
+
+    text(G.Nodes.X,G.Nodes.Y,G.Nodes.Label,'HorizontalAlignment','center','VerticalAlignment','middle','FontSize',9,'FontWeight','bold');
     
-    hold off
+    
 end
 
 function plot_edge_values(nodes, edges, edgeValues, slacknodename, figTitle)
