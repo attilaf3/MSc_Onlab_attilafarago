@@ -4,7 +4,7 @@ clear all
 %% Configure network
 % Csomóponti table
 nodesname = ["N1"; "N2"; "N3"; "N4"; "N5"; "N6"; "N7"; "N8"; "N9"; "N10"; "N11"; "N12"; "N13"; "N14"; "N15"];
-nodesnp = 3* [190; 70; -80; -60; 200; -90; -130; 110; 120; 130; -150; 60; -170; 170; -120];
+nodesnp = 6* [190; 70; -80; -60; 200; -90; -130; 110; 120; 130; -150; 60; -170; 170; -120];
 nodesnp(end) = -(sum(nodesnp) - nodesnp(end));
 nodesx  = 2* [0.0; 0.0; 0.0; 0.0; 2.6; 3.4; 3.4; 4.7; 5.1; 7.5; 9.7; 9.7; 6.3; 6.2; 9.4];
 nodesy  = 2* [7.5; 5.2; 2.7; 0.4; 5.1; 3.0; 0.6; 7.6; 5.0; 5.5; 7.2; 3.3; 2.6; 0.6; 0.7];
@@ -210,6 +210,11 @@ co_names = {};
 fref_list = [];
 ram_list = [];
 ptdf_cbco_matrix = [];
+f0_list = [];
+ram0_list = [];
+minram_list = [];
+amr_list = [];
+finalram_list = [];
 
 % alapeset
 for cb_idx = 1:height(edges)
@@ -219,10 +224,21 @@ for cb_idx = 1:height(edges)
     co_names{end+1, 1} = "BaseCase";
     
     fref_base = edges.Fref(cb_idx);
-    ram_base  = edges.Fmax(cb_idx) - edges.FRM(cb_idx) - fref_base;
+    f0_base = edges.F0(cb_idx);
+
+    ram0_base = edges.Fmax(cb_idx) - edges.FRM(cb_idx) - f0_base;
+    minram_base = Ramr * edges.Fmax(cb_idx);
+    amr_base = max(minram_base - ram0_base, 0);
+    finalram_base = ram0_base + amr_base;
+    
+    f0_list(end+1,1) = f0_base;
+    ram0_list(end+1,1) = ram0_base;
+    minram_list(end+1,1) = minram_base;
+    amr_list(end+1,1) = amr_base;
+    finalram_list(end+1,1) = finalram_base;
 
     fref_list(end+1,1) = fref_base;
-    ram_list(end+1,1)  = ram_base;
+    ram_list(end+1,1)  = finalram_base;
 
     % ptdf_cbco_matrix(end+1,:) = zonetozonePTDF_all(cb_idx,:);
     ptdf_cbco_matrix(end+1,:) = zonetoslackPTDF(cb_idx,:);
@@ -248,21 +264,34 @@ for m = 1:numel(critical_outages_idx)
 
         fref_cbo = edges.Fref(cb_idx) + LODF(cb_idx, co_idx) * edges.Fref(co_idx);
         
-        ram_cbo = edges.Fmax(cb_idx) - edges.FRM(cb_idx) - fref_cbo;
+        f0_cbo = edges.F0(cb_idx) + LODF(cb_idx, co_idx) * edges.F0(co_idx);
+
+        ram0_cbo = edges.Fmax(cb_idx) - edges.FRM(cb_idx) - f0_cbo;
+        minram_cbo = Ramr * edges.Fmax(cb_idx);
+        amr_cbo = max(minram_cbo - ram0_cbo, 0);
+        finalram_cbo = ram0_cbo + amr_cbo;
+        
+        f0_list(end+1,1) = f0_cbo;
+        ram0_list(end+1,1) = ram0_cbo;
+        minram_list(end+1,1) = minram_cbo;
+        amr_list(end+1,1) = amr_cbo;
+        finalram_list(end+1,1) = finalram_cbo;
         
                 
         cb_names{end+1, 1} = cb_name;
         co_names{end+1, 1} = co_name + " kiesése";
 
         fref_list(end+1,1) = fref_cbo;
-        ram_list(end+1,1)  = ram_cbo;
+        ram_list(end+1,1)  = finalram_cbo;
 
         ptdf_cbco_matrix(end+1,:) = ptdf_cbo;
     end
 end
 
-CBCO_table = table(cb_names, co_names, fref_list, ram_list, ...
-    'VariableNames', {'CriticalBranch', 'CriticalOutage', 'Fref', 'RAM'});
+CBCO_table = table(cb_names, co_names, fref_list, f0_list, ...
+    ram0_list, minram_list, amr_list, finalram_list, ...
+    'VariableNames', {'CriticalBranch', 'CriticalOutage', ...
+    'Fref', 'F0', 'RAM0', 'minRAM', 'AMR', 'finalRAM'});
 
 % ztzPTDF hozzáadás
 % for z = 1:ztznum
@@ -279,7 +308,7 @@ end
 
 NP = zoneNP;                 
 leftside = ptdf_cbco_matrix * NP; 
-rightside = ram_list;             
+rightside = finalram_list;             
 diff = rightside - leftside;
 
 PTDF_NP_RAM_table = table( ...
