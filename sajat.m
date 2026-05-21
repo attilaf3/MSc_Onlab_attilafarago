@@ -12,23 +12,23 @@ nodezone = ["A";"A";"B";"B";"A";"B";"B";"C";"C";"C";"C";"D";"D";"D";"D"];
 
 
 % lsqlin-ből kapott np
-nodesnp = [ ...
-     143.3333;
-      69.0319;
-     -77.2379;
-     -53.2243;
-     195.6002;
-     -77.3673;
-    -119.5547;
-      88.7992;
-     103.8555;
-     -56.3812;
-    -143.6901;
-      71.0129;
-    -144.1777;
-     140.0000;
-    -140.0000
-];
+% nodesnp = [ ...
+%      143.3333;
+%       69.0319;
+%      -77.2379;
+%      -53.2243;
+%      195.6002;
+%      -77.3673;
+%     -119.5547;
+%       88.7992;
+%      103.8555;
+%      -56.3812;
+%     -143.6901;
+%       71.0129;
+%     -144.1777;
+%      140.0000;
+%     -140.0000
+% ];
 
 nodes = table(nodesname, nodesnp, nodesx, nodesy, nodezone, 'VariableNames', {'NodeName', 'NP', 'X', 'Y', 'Zone'});
 
@@ -62,6 +62,9 @@ for edge_idx = 1:height(edges)
     A(edge_idx, dst_nodeidx) = -1;
 end
 
+
+% Slacknode oszlopának törlése (DC loadflowban a fázisszög 0-nak való
+% rögzítése)
 A(:,slacknodeid) = [];
 
 A_table = array2table(A, "RowNames", edgesname, "VariableNames", noslacknodesname)
@@ -187,11 +190,13 @@ Ramr = 0.70;
 edges.minRAM = Ramr * edges.Fmax;
 
 % Pozitív irány
+% PTDF*NP <= RAM_plus
 edges.RAM0_plus = edges.Fmax - edges.FRM - edges.F0;
 edges.AMR_plus = max(edges.minRAM - edges.RAM0_plus, 0);
 edges.finalRAM_plus = edges.RAM0_plus + edges.AMR_plus;
 
 % Negatív irány
+% -PTDF*NP <= RAM_minus
 edges.RAM0_minus = edges.Fmax - edges.FRM + edges.F0;
 edges.AMR_minus = max(edges.minRAM - edges.RAM0_minus, 0);
 edges.finalRAM_minus = edges.RAM0_minus + edges.AMR_minus;
@@ -380,10 +385,10 @@ for m = 1:numel(critical_outages_idx)
             continue;
         end
 
-        ptdf_cbo_node = nodetoslackPTDF(cb_idx,:) + ...
+        ptdf_cbco_node = nodetoslackPTDF(cb_idx,:) + ...
             LODF(cb_idx, co_idx) * nodetoslackPTDF(co_idx,:);
 
-        ntzPTDF_cbco(end+1,:) = ptdf_cbo_node;
+        ntzPTDF_cbco(end+1,:) = ptdf_cbco_node;
     end
 end
 
@@ -396,11 +401,11 @@ end
 % PTDF⋅NP<=RAM+
 % −PTDF⋅NP<=RAM−
 NP = zoneNP;                 
-leftside = ptdf_cbco_matrix * NP; 
              
 left_plus = ptdf_cbco_matrix * zoneNP;
 left_minus = -ptdf_cbco_matrix * zoneNP;
 
+% ha pozitívak, akkor teljesülnek a feltételek
 dif_plus  = finalram_plus_list  - left_plus;
 dif_minus = finalram_minus_list - left_minus;
 
@@ -419,29 +424,52 @@ PTDF_NP_RAM_table = table( ...
 
 %% LSQLIN - node NP
 
-x_ref = np;   % slack nélküli 14 db csomóponti NP
+% Referencia np vektor az optimalizáláshoz az eredeti vektor
+% slack nélküli 14 db csomóponti NP
+x_ref = np;   
 
+% feltételek együtthatóinak mátrixa
 Aineq = [
      ntzPTDF_cbco;
     -ntzPTDF_cbco
 ];
 
+
+% az egyenlőtlenségek jobb oldala
 bineq = [
      finalram_plus_list;
      finalram_minus_list
 ];
 
+% egységmátrix, mert min(Cx-xref)^2
 C = eye(numel(x_ref));
+
+% referencia np a matlabos jelölésnek megfelelően
 d = x_ref;
 
+% egyenlőségek nincsenek a feltételek között
+% a sum(np)=0 nincs szükség, mert a slack később lesz visszaszámolva
+% matek miatt nem lesz túlterhelődési probléma (PTDF*x szorzatban benne van
+% a slack hatása is)
+% ha np-ben benne van slack, és ptdf-ekben 0-s oszlop,sor, akkor kell
+% sum(np)=0
 Aeq = [];
 beq = [];
 
+% alsó korlát np-kre -végtelen
 lb = -inf(numel(x_ref),1);
+
+% felső korlát np-kre végtelen
 ub =  inf(numel(x_ref),1);
 
 options = optimoptions('lsqlin','Display','iter');
 
+
+% resnorm: eltérés négyzete
+% primal: x_new (új np)
+% dual: korláthoz tartozik
+% residual:C*x_new - d, vagyis az np változást leíró vektor
+% exitflag: jelzi, hogy sikeres volt-e az optimalizálás.
 [x_new,resnorm,residual,exitflag,output] = lsqlin( ...
     C,d,Aineq,bineq,Aeq,beq,lb,ub,[],options);
 
@@ -627,4 +655,3 @@ function nodeColors = get_zone_colors(zones)
         end
     end
 end
-
