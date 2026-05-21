@@ -4,11 +4,31 @@ clear all
 %% Configure network
 % Csomóponti table
 nodesname = ["N1"; "N2"; "N3"; "N4"; "N5"; "N6"; "N7"; "N8"; "N9"; "N10"; "N11"; "N12"; "N13"; "N14"; "N15"];
-nodesnp = 6* [190; 70; -80; -60; 200; -90; -130; 110; 120; 130; -150; 60; -170; 170; -120];
+nodesnp = [190; 70; -80; -60; 200; -90; -130; 110; 120; 130; -150; 60; -170; 170; -120];
 nodesnp(end) = -(sum(nodesnp) - nodesnp(end));
 nodesx  = 2* [0.0; 0.0; 0.0; 0.0; 2.6; 3.4; 3.4; 4.7; 5.1; 7.5; 9.7; 9.7; 6.3; 6.2; 9.4];
 nodesy  = 2* [7.5; 5.2; 2.7; 0.4; 5.1; 3.0; 0.6; 7.6; 5.0; 5.5; 7.2; 3.3; 2.6; 0.6; 0.7];
 nodezone = ["A";"A";"B";"B";"A";"B";"B";"C";"C";"C";"C";"D";"D";"D";"D"];
+
+
+% lsqlin-ből kapott np
+nodesnp = [ ...
+     143.3333;
+      69.0319;
+     -77.2379;
+     -53.2243;
+     195.6002;
+     -77.3673;
+    -119.5547;
+      88.7992;
+     103.8555;
+     -56.3812;
+    -143.6901;
+      71.0129;
+    -144.1777;
+     140.0000;
+    -140.0000
+];
 
 nodes = table(nodesname, nodesnp, nodesx, nodesy, nodezone, 'VariableNames', {'NodeName', 'NP', 'X', 'Y', 'Zone'});
 
@@ -18,7 +38,8 @@ edgeslength = [150; 125; 175; 160; 100; 170; 140; 115; 145; 210; 180; 215; 135; 
 edgesohm = 0.3 * edgeslength;
 edgesfrom = ["N1"; "N2"; "N3"; "N4"; "N6"; "N3"; "N3"; "N2"; "N5"; "N1"; "N8"; "N8"; "N9"; "N10"; "N11"; "N10"; "N9"; "N13"; "N6"; "N7"; "N14"; "N12"];
 edgesto   = ["N2"; "N3"; "N4"; "N7"; "N7"; "N6"; "N5"; "N5"; "N9"; "N8"; "N9"; "N11"; "N10"; "N11"; "N12"; "N12"; "N13"; "N12"; "N13"; "N14"; "N15"; "N15"];
-edgesfmax = 1386 * ones(numel(edgesname),1);  
+% edgesfmax = 1386 * ones(numel(edgesname),1);
+edgesfmax = 200 * ones(numel(edgesname),1);
 edgesfrm  = 0.1*edgesfmax;   
 
 edges = table(edgesname, edgesohm, edgesfrom, edgesto, edgesfmax, edgesfrm, 'VariableNames', {'EdgeName', 'Ohm', 'From', 'To', 'Fmax', 'FRM'});
@@ -164,10 +185,20 @@ edges.RAM0 = edges.Fmax - edges.FRM - edges.F0;
 % Minimum RAM követelmény
 Ramr = 0.70;
 edges.minRAM = Ramr * edges.Fmax;
-edges.AMR = max(edges.minRAM - edges.RAM0, 0);
-edges.finalRAM = edges.RAM0 + edges.AMR;
 
-ram_table = edges(:, {'EdgeName','Fref','F0','Fmax','FRM','RAM0','minRAM','AMR','finalRAM'})
+% Pozitív irány
+edges.RAM0_plus = edges.Fmax - edges.FRM - edges.F0;
+edges.AMR_plus = max(edges.minRAM - edges.RAM0_plus, 0);
+edges.finalRAM_plus = edges.RAM0_plus + edges.AMR_plus;
+
+% Negatív irány
+edges.RAM0_minus = edges.Fmax - edges.FRM + edges.F0;
+edges.AMR_minus = max(edges.minRAM - edges.RAM0_minus, 0);
+edges.finalRAM_minus = edges.RAM0_minus + edges.AMR_minus;
+
+ram_table = edges(:, {'EdgeName','Fref','F0','Fmax','FRM', ...
+    'RAM0_plus','AMR_plus','finalRAM_plus', ...
+    'RAM0_minus','AMR_minus','finalRAM_minus','minRAM'})
 
 %% LODF
 outageline = "L22";
@@ -208,13 +239,16 @@ end
 cb_names = {};        
 co_names = {};        
 fref_list = [];
-ram_list = [];
-ptdf_cbco_matrix = [];
 f0_list = [];
-ram0_list = [];
+ptdf_cbco_matrix = [];
 minram_list = [];
-amr_list = [];
-finalram_list = [];
+ram0_plus_list = [];
+ram0_minus_list = [];
+amr_plus_list = [];
+amr_minus_list = [];
+finalram_plus_list = [];
+finalram_minus_list = [];
+
 
 % alapeset
 for cb_idx = 1:height(edges)
@@ -226,20 +260,28 @@ for cb_idx = 1:height(edges)
     fref_base = edges.Fref(cb_idx);
     f0_base = edges.F0(cb_idx);
 
-    ram0_base = edges.Fmax(cb_idx) - edges.FRM(cb_idx) - f0_base;
+    ram0_plus_base  = edges.Fmax(cb_idx) - edges.FRM(cb_idx) - f0_base;
+    ram0_minus_base = edges.Fmax(cb_idx) - edges.FRM(cb_idx) + f0_base;
+
     minram_base = Ramr * edges.Fmax(cb_idx);
-    amr_base = max(minram_base - ram0_base, 0);
-    finalram_base = ram0_base + amr_base;
+
+    amr_plus_base  = max(minram_base - ram0_plus_base, 0);
+    amr_minus_base = max(minram_base - ram0_minus_base, 0);
+
+    finalram_plus_base  = ram0_plus_base  + amr_plus_base;
+    finalram_minus_base = ram0_minus_base + amr_minus_base;
     
-    f0_list(end+1,1) = f0_base;
-    ram0_list(end+1,1) = ram0_base;
+    
+    ram0_plus_list(end+1,1) = ram0_plus_base;
+    ram0_minus_list(end+1,1) = ram0_minus_base;
     minram_list(end+1,1) = minram_base;
-    amr_list(end+1,1) = amr_base;
-    finalram_list(end+1,1) = finalram_base;
-
+    amr_plus_list(end+1,1) = amr_plus_base;
+    amr_minus_list(end+1,1) = amr_minus_base;
+    finalram_plus_list(end+1,1) = finalram_plus_base;
+    finalram_minus_list(end+1,1) = finalram_minus_base;
+    f0_list(end+1,1) = f0_base;
     fref_list(end+1,1) = fref_base;
-    ram_list(end+1,1)  = finalram_base;
-
+    
     % ptdf_cbco_matrix(end+1,:) = zonetozonePTDF_all(cb_idx,:);
     ptdf_cbco_matrix(end+1,:) = zonetoslackPTDF(cb_idx,:);
 end
@@ -264,66 +306,168 @@ for m = 1:numel(critical_outages_idx)
 
         fref_cbo = edges.Fref(cb_idx) + LODF(cb_idx, co_idx) * edges.Fref(co_idx);
         
-        f0_cbo = edges.F0(cb_idx) + LODF(cb_idx, co_idx) * edges.F0(co_idx);
+        % f0_cbo = edges.F0(cb_idx) + LODF(cb_idx, co_idx) * edges.F0(co_idx);
+        f0_cbo = fref_cbo - ptdf_cbo * zoneNP;
 
-        ram0_cbo = edges.Fmax(cb_idx) - edges.FRM(cb_idx) - f0_cbo;
+
+
+        ram0_plus_cbo  = edges.Fmax(cb_idx) - edges.FRM(cb_idx) - f0_cbo;
+        ram0_minus_cbo = edges.Fmax(cb_idx) - edges.FRM(cb_idx) + f0_cbo;
+        
         minram_cbo = Ramr * edges.Fmax(cb_idx);
-        amr_cbo = max(minram_cbo - ram0_cbo, 0);
-        finalram_cbo = ram0_cbo + amr_cbo;
         
-        f0_list(end+1,1) = f0_cbo;
-        ram0_list(end+1,1) = ram0_cbo;
-        minram_list(end+1,1) = minram_cbo;
-        amr_list(end+1,1) = amr_cbo;
-        finalram_list(end+1,1) = finalram_cbo;
+        amr_plus_cbo  = max(minram_cbo - ram0_plus_cbo, 0);
+        amr_minus_cbo = max(minram_cbo - ram0_minus_cbo, 0);
         
-                
+        finalram_plus_cbo  = ram0_plus_cbo  + amr_plus_cbo;
+        finalram_minus_cbo = ram0_minus_cbo + amr_minus_cbo;
+        
+  
         cb_names{end+1, 1} = cb_name;
         co_names{end+1, 1} = co_name + " kiesése";
 
         fref_list(end+1,1) = fref_cbo;
-        ram_list(end+1,1)  = finalram_cbo;
-
+        f0_list(end+1,1) = f0_cbo;
         ptdf_cbco_matrix(end+1,:) = ptdf_cbo;
+
+
+        ram0_plus_list(end+1,1) = ram0_plus_cbo;
+        ram0_minus_list(end+1,1) = ram0_minus_cbo;
+        minram_list(end+1,1) = minram_cbo;
+        amr_plus_list(end+1,1) = amr_plus_cbo;
+        amr_minus_list(end+1,1) = amr_minus_cbo;
+        finalram_plus_list(end+1,1) = finalram_plus_cbo;
+        finalram_minus_list(end+1,1) = finalram_minus_cbo;
     end
 end
 
 CBCO_table = table(cb_names, co_names, fref_list, f0_list, ...
-    ram0_list, minram_list, amr_list, finalram_list, ...
+    ram0_plus_list, amr_plus_list, finalram_plus_list, ...
+    ram0_minus_list, amr_minus_list, finalram_minus_list, ...
+    minram_list, ...
     'VariableNames', {'CriticalBranch', 'CriticalOutage', ...
-    'Fref', 'F0', 'RAM0', 'minRAM', 'AMR', 'finalRAM'});
+    'Fref', 'F0', ...
+    'RAM0_plus', 'AMR_plus', 'finalRAM_plus', ...
+    'RAM0_minus', 'AMR_minus', 'finalRAM_minus', ...
+    'minRAM'});
 
 % ztzPTDF hozzáadás
 % for z = 1:ztznum
 %     col_name = "PTDF_" + replace(ztz_names(z), "->", "_to_");
 %     CBCO_table.(col_name) = ptdf_cbco_matrix(:, z);
 % end
-for z = 1:zonenum
-    col_name = "PTDF_" + zonenames(z);
-    CBCO_table.(col_name) = ptdf_cbco_matrix(:, z);
+% for z = 1:zonenum
+%     col_name = "PTDF_" + zonenames(z);
+%     CBCO_table.(col_name) = ptdf_cbco_matrix(:, z);
+% end
+
+%% CBCO-ba node-to-slack PTDF
+
+ntzPTDF_cbco = [];
+
+% Base case
+for cb_idx = 1:height(edges)
+    ntzPTDF_cbco(end+1,:) = nodetoslackPTDF(cb_idx,:);
 end
 
+% Kontingenciák
+for m = 1:numel(critical_outages_idx)
+    co_idx = critical_outages_idx(m);
 
+    for cb_idx = 1:height(edges)
+
+        if cb_idx == co_idx
+            continue;
+        end
+
+        ptdf_cbo_node = nodetoslackPTDF(cb_idx,:) + ...
+            LODF(cb_idx, co_idx) * nodetoslackPTDF(co_idx,:);
+
+        ntzPTDF_cbco(end+1,:) = ptdf_cbo_node;
+    end
+end
+
+for n = 1:numel(noslacknodesname)
+    col_name = "PTDF_" + noslacknodesname(n);
+    CBCO_table.(col_name) = ntzPTDF_cbco(:,n);
+end
 %% PTDF * NP <= RAM tábla
 
+% PTDF⋅NP<=RAM+
+% −PTDF⋅NP<=RAM−
 NP = zoneNP;                 
 leftside = ptdf_cbco_matrix * NP; 
-rightside = finalram_list;             
-diff = rightside - leftside;
+             
+left_plus = ptdf_cbco_matrix * zoneNP;
+left_minus = -ptdf_cbco_matrix * zoneNP;
+
+dif_plus  = finalram_plus_list  - left_plus;
+dif_minus = finalram_minus_list - left_minus;
 
 PTDF_NP_RAM_table = table( ...
     CBCO_table.CriticalBranch, ...
     CBCO_table.CriticalOutage, ...
-    leftside, ...
-    rightside, ...
-    diff, ...
+    left_plus, finalram_plus_list, dif_plus, ...
+    left_minus, finalram_minus_list, dif_minus, ...
     'VariableNames', { ...
-        'CriticalBranch', ...
-        'CriticalOutage', ...
-        'PTDFxNP', ...
-        'RAM', ...
-        'Difference'} ...
+        'CriticalBranch', 'CriticalOutage', ...
+        'PTDFxNP_plus', 'RAM_plus', 'Difference_plus', ...
+        'PTDFxNP_minus', 'RAM_minus', 'Difference_minus'} ...
 );
+
+
+
+%% LSQLIN - node NP
+
+x_ref = np;   % slack nélküli 14 db csomóponti NP
+
+Aineq = [
+     ntzPTDF_cbco;
+    -ntzPTDF_cbco
+];
+
+bineq = [
+     finalram_plus_list;
+     finalram_minus_list
+];
+
+C = eye(numel(x_ref));
+d = x_ref;
+
+Aeq = [];
+beq = [];
+
+lb = -inf(numel(x_ref),1);
+ub =  inf(numel(x_ref),1);
+
+options = optimoptions('lsqlin','Display','iter');
+
+[x_new,resnorm,residual,exitflag,output] = lsqlin( ...
+    C,d,Aineq,bineq,Aeq,beq,lb,ub,[],options);
+
+% slack np beillesztése
+nodeNP_new = zeros(height(nodes),1);
+
+nodeNP_new(nodes.NodeName ~= slacknodename) = x_new;
+nodeNP_new(slacknodeid) = -sum(x_new);
+
+nodeNP_result_table = table( ...
+    nodes.NodeName, nodes.NP, nodeNP_new, nodeNP_new - nodes.NP, ...
+    'VariableNames', {'Node','NP_original','NP_new','DeltaNP'})
+
+
+% Új np ellenőrzés
+left_plus_new  = ntzPTDF_cbco * x_new;
+left_minus_new = -ntzPTDF_cbco * x_new;
+
+lsqlin_check_table = table( ...
+    string(CBCO_table.CriticalBranch), ...
+    string(CBCO_table.CriticalOutage), ...
+    left_plus_new, finalram_plus_list, finalram_plus_list - left_plus_new, ...
+    left_minus_new, finalram_minus_list, finalram_minus_list - left_minus_new, ...
+    'VariableNames', {'CB','CO', ...
+    'PTDFxNP_plus','RAM_plus','Difference_plus', ...
+    'PTDFxNP_minus','RAM_minus','Difference_minus'})
 
 
 %% ÁBRÁK
@@ -408,9 +552,23 @@ G.Edges.Label = compose("%s: %.1f",G.Edges.EdgeName, G.Edges.F0);
 plot_network(G,slacknodename,'Áramlás kereskedelem nélkül (F0)')
 
 
-% RAM az egyes vezetékeken
-G.Edges.Label = compose("%s: %.1f",G.Edges.EdgeName, G.Edges.RAM0);
-plot_network(G,slacknodename,'RAM az egyes vezetékeken')
+% RAM0+ az egyes vezetékeken F0 esetben
+G.Edges.Label = compose("%s: %.1f",G.Edges.EdgeName, G.Edges.RAM0_plus);
+plot_network(G,slacknodename,'RAM0+ az egyes vezetékeken')
+
+% RAM0- az egyes vezetékeken F0 esetben
+G.Edges.Label = compose("%s: %.1f",G.Edges.EdgeName, G.Edges.RAM0_minus);
+plot_network(G,slacknodename,'RAM0- az egyes vezetékeken')
+
+% Virtuális kapacitás pozitív irányban az egyes vezetékeken
+G.Nodes.Label = compose("%s\n%+.1f", string(G.Nodes.Name), G.Nodes.NP);
+G.Edges.Label = compose("%s: %.1f",G.Edges.EdgeName, G.Edges.AMR_plus);
+plot_network(G,slacknodename,'AMR+ az egyes vezetékeken')
+
+% Virtuális kapacitás negatív irányban az egyes vezetékeken
+G.Nodes.Label = compose("%s\n%+.1f", string(G.Nodes.Name), G.Nodes.NP);
+G.Edges.Label = compose("%s: %.1f",G.Edges.EdgeName, G.Edges.AMR_minus);
+plot_network(G,slacknodename,'AMR- az egyes vezetékeken')
 
 
 
@@ -449,6 +607,7 @@ function plot_network(G, slacknodename, figTitle)
 end
 
 
+
 function nodeColors = get_zone_colors(zones)
 
     nodeColors = zeros(numel(zones), 3);
@@ -468,6 +627,4 @@ function nodeColors = get_zone_colors(zones)
         end
     end
 end
-
-
 
