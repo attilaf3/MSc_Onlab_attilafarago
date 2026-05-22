@@ -11,7 +11,7 @@ nodesy  = 2* [7.5; 5.2; 2.7; 0.4; 5.1; 3.0; 0.6; 7.6; 5.0; 5.5; 7.2; 3.3; 2.6; 0
 nodezone = ["A";"A";"B";"B";"A";"B";"B";"C";"C";"C";"C";"D";"D";"D";"D"];
 
 
-% lsqlin-ből kapott np
+% lsqlin-ből kapott np, ha finalram
 % nodesnp = [ ...
 %      143.3333;
 %       69.0319;
@@ -29,6 +29,26 @@ nodezone = ["A";"A";"B";"B";"A";"B";"B";"C";"C";"C";"C";"D";"D";"D";"D"];
 %      140.0000;
 %     -140.0000
 % ];
+
+% lsqlin-ből kapott np, ha ram0
+% nodesnp = [...
+%     128.1123;
+%     60.1634;
+%     -84.4473;
+%     -58.3331;
+%     185.2052;
+%     -80.4924;
+%     -122.7430;
+%     48.1123;
+%     88.2365;
+%     -8.4098;
+%     -131.0777;
+%     73.9080;
+%     -143.2344;
+%     -67.5000;
+%     112.5000;
+% ];
+
 
 nodes = table(nodesname, nodesnp, nodesx, nodesy, nodezone, 'VariableNames', {'NodeName', 'NP', 'X', 'Y', 'Zone'});
 
@@ -361,18 +381,19 @@ CBCO_table = table(cb_names, co_names, fref_list, f0_list, ...
 %     col_name = "PTDF_" + replace(ztz_names(z), "->", "_to_");
 %     CBCO_table.(col_name) = ptdf_cbco_matrix(:, z);
 % end
-% for z = 1:zonenum
-%     col_name = "PTDF_" + zonenames(z);
-%     CBCO_table.(col_name) = ptdf_cbco_matrix(:, z);
-% end
+% ztsPTDF hozzáadás
+for z = 1:zonenum
+    col_name = "PTDF_" + zonenames(z);
+    CBCO_table.(col_name) = ptdf_cbco_matrix(:, z);
+end
 
 %% CBCO-ba node-to-slack PTDF
 
-ntzPTDF_cbco = [];
+ntsPTDF_cbco = [];
 
 % Base case
 for cb_idx = 1:height(edges)
-    ntzPTDF_cbco(end+1,:) = nodetoslackPTDF(cb_idx,:);
+    ntsPTDF_cbco(end+1,:) = nodetoslackPTDF(cb_idx,:);
 end
 
 % Kontingenciák
@@ -388,14 +409,34 @@ for m = 1:numel(critical_outages_idx)
         ptdf_cbco_node = nodetoslackPTDF(cb_idx,:) + ...
             LODF(cb_idx, co_idx) * nodetoslackPTDF(co_idx,:);
 
-        ntzPTDF_cbco(end+1,:) = ptdf_cbco_node;
+        ntsPTDF_cbco(end+1,:) = ptdf_cbco_node;
     end
 end
 
-for n = 1:numel(noslacknodesname)
-    col_name = "PTDF_" + noslacknodesname(n);
-    CBCO_table.(col_name) = ntzPTDF_cbco(:,n);
-end
+% for n = 1:numel(noslacknodesname)
+%     col_name = "PTDF_" + noslacknodesname(n);
+%     CBCO_table.(col_name) = ntzPTDF_cbco(:,n);
+% end
+
+
+%% F0 és RAM0 tábla CBCO-kra
+
+F0_RAM0_table = table( ...
+    string(CBCO_table.CriticalBranch), ...
+    string(CBCO_table.CriticalOutage), ...
+    f0_list, ...
+    edges.Fmax(1) * ones(size(f0_list)), ...
+    edges.FRM(1)  * ones(size(f0_list)), ...
+    ram0_plus_list, ...
+    ram0_minus_list, ...
+    minram_list, ...
+    amr_plus_list, ...
+    amr_minus_list, ...
+    finalram_plus_list, ...
+    finalram_minus_list, ...
+    'VariableNames', {'CB','CO','F0','Fmax','FRM', ...
+    'RAM0_plus','RAM0_minus','minRAM', ...
+    'AMR_plus','AMR_minus','finalRAM_plus','finalRAM_minus'})
 %% PTDF * NP <= RAM tábla
 
 % PTDF⋅NP<=RAM+
@@ -430,8 +471,8 @@ x_ref = np;
 
 % feltételek együtthatóinak mátrixa
 Aineq = [
-     ntzPTDF_cbco;
-    -ntzPTDF_cbco
+     ntsPTDF_cbco;
+    -ntsPTDF_cbco
 ];
 
 
@@ -440,6 +481,11 @@ bineq = [
      finalram_plus_list;
      finalram_minus_list
 ];
+
+% bineq = [
+%      ram0_plus_list;
+%      ram0_minus_list
+% ];
 
 % egységmátrix, mert min(Cx-xref)^2
 C = eye(numel(x_ref));
@@ -456,11 +502,11 @@ d = x_ref;
 Aeq = [];
 beq = [];
 
-% alsó korlát np-kre -végtelen
-lb = -inf(numel(x_ref),1);
+% alsó korlát np-kre -1000
+lb = -1000 * ones(numel(x_ref),1);
 
-% felső korlát np-kre végtelen
-ub =  inf(numel(x_ref),1);
+% felső korlát np-kre 1000
+ub =  1000 * ones(numel(x_ref),1);
 
 options = optimoptions('lsqlin','Display','iter');
 
@@ -485,8 +531,8 @@ nodeNP_result_table = table( ...
 
 
 % Új np ellenőrzés
-left_plus_new  = ntzPTDF_cbco * x_new;
-left_minus_new = -ntzPTDF_cbco * x_new;
+left_plus_new  = ntsPTDF_cbco * x_new;
+left_minus_new = -ntsPTDF_cbco * x_new;
 
 lsqlin_check_table = table( ...
     string(CBCO_table.CriticalBranch), ...
