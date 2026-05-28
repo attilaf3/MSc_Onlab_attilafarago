@@ -12,42 +12,24 @@ nodezone = ["A";"A";"B";"B";"A";"B";"B";"C";"C";"C";"C";"D";"D";"D";"D"];
 
 
 % lsqlin-ből kapott np, ha finalram
-% nodesnp = [ ...
-%      143.3333;
-%       69.0319;
-%      -77.2379;
-%      -53.2243;
-%      195.6002;
-%      -77.3673;
-%     -119.5547;
-%       88.7992;
-%      103.8555;
-%      -56.3812;
-%     -143.6901;
-%       71.0129;
-%     -144.1777;
-%      140.0000;
-%     -140.0000
-% ];
+nodesnp = [ ...
+     143.3333;
+      69.0319;
+     -77.2379;
+     -53.2243;
+     195.6002;
+     -77.3673;
+    -119.5547;
+      88.7992;
+     103.8555;
+     -56.3812;
+    -143.6901;
+      71.0129;
+    -144.1777;
+     140.0000;
+    -140.0000
+];
 
-% lsqlin-ből kapott np, ha ram0
-% nodesnp = [...
-%     128.1123;
-%     60.1634;
-%     -84.4473;
-%     -58.3331;
-%     185.2052;
-%     -80.4924;
-%     -122.7430;
-%     48.1123;
-%     88.2365;
-%     -8.4098;
-%     -131.0777;
-%     73.9080;
-%     -143.2344;
-%     -67.5000;
-%     112.5000;
-% ];
 
 
 nodes = table(nodesname, nodesnp, nodesx, nodesy, nodezone, 'VariableNames', {'NodeName', 'NP', 'X', 'Y', 'Zone'});
@@ -463,85 +445,81 @@ PTDF_NP_RAM_table = table( ...
 
 
 
-%% LSQLIN - node NP
-
-% Referencia np vektor az optimalizáláshoz az eredeti vektor
-% slack nélküli 14 db csomóponti NP
-x_ref = np;   
-
-% feltételek együtthatóinak mátrixa
-Aineq = [
-     ntsPTDF_cbco;
-    -ntsPTDF_cbco
-];
-
-
-% az egyenlőtlenségek jobb oldala
-bineq = [
-     finalram_plus_list;
-     finalram_minus_list
-];
-
-% bineq = [
-%      ram0_plus_list;
-%      ram0_minus_list
+% %% LSQLIN - node NP
+% 
+% % Referencia np vektor az optimalizáláshoz az eredeti vektor
+% % slack nélküli 14 db csomóponti NP
+% x_ref = np;   
+% 
+% % feltételek együtthatóinak mátrixa
+% Aineq = [
+%      ntsPTDF_cbco;
+%     -ntsPTDF_cbco
 % ];
-
-% egységmátrix, mert min(Cx-xref)^2
-C = eye(numel(x_ref));
-
-% referencia np a matlabos jelölésnek megfelelően
-d = x_ref;
-
-% egyenlőségek nincsenek a feltételek között
-% a sum(np)=0 nincs szükség, mert a slack később lesz visszaszámolva
-% matek miatt nem lesz túlterhelődési probléma (PTDF*x szorzatban benne van
-% a slack hatása is)
-% ha np-ben benne van slack, és ptdf-ekben 0-s oszlop,sor, akkor kell
-% sum(np)=0
-Aeq = [];
-beq = [];
-
-% alsó korlát np-kre -1000
-lb = -1000 * ones(numel(x_ref),1);
-
-% felső korlát np-kre 1000
-ub =  1000 * ones(numel(x_ref),1);
-
-options = optimoptions('lsqlin','Display','iter');
-
-
-% resnorm: eltérés négyzete
-% primal: x_new (új np)
-% dual: korláthoz tartozik
-% residual:C*x_new - d, vagyis az np változást leíró vektor
-% exitflag: jelzi, hogy sikeres volt-e az optimalizálás.
-[x_new,resnorm,residual,exitflag,output] = lsqlin( ...
-    C,d,Aineq,bineq,Aeq,beq,lb,ub,[],options);
-
-% slack np beillesztése
-nodeNP_new = zeros(height(nodes),1);
-
-nodeNP_new(nodes.NodeName ~= slacknodename) = x_new;
-nodeNP_new(slacknodeid) = -sum(x_new);
-
-nodeNP_result_table = table( ...
-    nodes.NodeName, nodes.NP, nodeNP_new, nodeNP_new - nodes.NP, ...
-    'VariableNames', {'Node','NP_original','NP_new','DeltaNP'})
-
-
-% Új np ellenőrzés
-left_plus_new  = ntsPTDF_cbco * x_new;
-left_minus_new = -ntsPTDF_cbco * x_new;
-
-lsqlin_check_table = table( ...
-    string(CBCO_table.CriticalBranch), ...
-    string(CBCO_table.CriticalOutage), ...
-    left_plus_new, finalram_plus_list, finalram_plus_list - left_plus_new, ...
-    left_minus_new, finalram_minus_list, finalram_minus_list - left_minus_new, ...
-    'VariableNames', {'CB','CO', ...
-    'PTDFxNP_plus','RAM_plus','Difference_plus', ...
-    'PTDFxNP_minus','RAM_minus','Difference_minus'})
+% 
+% 
+% % az egyenlőtlenségek jobb oldala
+% bineq = [
+%      finalram_plus_list;
+%      finalram_minus_list
+% ];
+% 
+% 
+% % egységmátrix, mert min(Cx-xref)^2
+% C = eye(numel(x_ref));
+% 
+% % referencia np a matlabos jelölésnek megfelelően
+% d = x_ref;
+% 
+% % egyenlőségek nincsenek a feltételek között
+% % a sum(np)=0 nincs szükség, mert a slack később lesz visszaszámolva
+% % matek miatt nem lesz túlterhelődési probléma (PTDF*x szorzatban benne van
+% % a slack hatása is)
+% % ha np-ben benne van slack, és ptdf-ekben 0-s oszlop,sor, akkor kell
+% % sum(np)=0
+% Aeq = [];
+% beq = [];
+% 
+% % alsó korlát np-kre -1000
+% lb = -1000 * ones(numel(x_ref),1);
+% 
+% % felső korlát np-kre 1000
+% ub =  1000 * ones(numel(x_ref),1);
+% 
+% options = optimoptions('lsqlin','Display','iter');
+% 
+% 
+% % resnorm: eltérés négyzete
+% % primal: x_new (új np)
+% % dual: korláthoz tartozik
+% % residual:C*x_new - d, vagyis az np változást leíró vektor
+% % exitflag: jelzi, hogy sikeres volt-e az optimalizálás.
+% [x_new,resnorm,residual,exitflag,output] = lsqlin( ...
+%     C,d,Aineq,bineq,Aeq,beq,lb,ub,[],options);
+% 
+% % slack np beillesztése
+% nodeNP_new = zeros(height(nodes),1);
+% 
+% nodeNP_new(nodes.NodeName ~= slacknodename) = x_new;
+% nodeNP_new(slacknodeid) = -sum(x_new);
+% 
+% nodeNP_result_table = table( ...
+%     nodes.NodeName, nodes.NP, nodeNP_new, nodeNP_new - nodes.NP, ...
+%     'VariableNames', {'Node','NP_original','NP_new','DeltaNP'})
+% 
+% 
+% % Új np ellenőrzés
+% left_plus_new  = ntsPTDF_cbco * x_new;
+% left_minus_new = -ntsPTDF_cbco * x_new;
+% 
+% lsqlin_check_table = table( ...
+%     string(CBCO_table.CriticalBranch), ...
+%     string(CBCO_table.CriticalOutage), ...
+%     left_plus_new, finalram_plus_list, finalram_plus_list - left_plus_new, ...
+%     left_minus_new, finalram_minus_list, finalram_minus_list - left_minus_new, ...
+%     'VariableNames', {'CB','CO', ...
+%     'PTDFxNP_plus','RAM_plus','Difference_plus', ...
+%     'PTDFxNP_minus','RAM_minus','Difference_minus'})
 
 
 %% ÁBRÁK
