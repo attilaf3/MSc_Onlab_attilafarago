@@ -179,7 +179,7 @@ result.Fmax = Fmax;
 result.FRM = FRM;
 result.A_domain = A_domain;
 result.b_domain = b_domain;
-result.b_physical = [Fmax-F0; Fmax+F0];
+result.b_physical = [Fmax-FRM-F0; Fmax-FRM+F0];
 result.T = T;
 result.UnsafeDirectionIndices = find(isOverloaded);
 result.Tolerance = tol;
@@ -191,7 +191,7 @@ b_physical = [
     Fmax - FRM - F0;
     Fmax - FRM + F0
 ];
-% elemenkénti minimum
+% elemenkénti minimum, a szigorúbb lesz figyelembe véve
 b_modified = min(b_domain, b_physical);
 
 result.b_new = b_modified;
@@ -289,39 +289,186 @@ result.VolumeOld = volume_old;
 result.VolumeNew = volume_new;
 result.VolumeReductionPercent = 100 * (volume_old-volume_new) / volume_old;
 
-%% 2D ábrák
+%% ábrák
+
 pairs = nchoosek(1:numel(zonenames),2);
 fig = figure('Color','w');
 
 for k = 1:size(pairs,1)
     z1 = pairs(k,1);
     z2 = pairs(k,2);
-    points_old = vertices_old(:,[z1 z2]);
-    points_new = vertices_new(:,[z1 z2]);
-    boundary_old = convhull(points_old(:,1),points_old(:,2));
-    boundary_new = convhull(points_new(:,1),points_new(:,2));
+
+    remaining = setdiff(1:4,[z1 z2]);
+    fixed_zone = remaining(1);
+    balance_zone = remaining(2);
+
+    % NP = S * [NP_z1; NP_z2] + NP_fixed
+    S = zeros(4,2);
+    S(z1,1) = 1;
+    S(z2,2) = 1;
+    S(balance_zone,:) = [-1 -1];
+
+    NP_fixed = zeros(4,1);
+    NP_fixed(fixed_zone) = zoneNP(fixed_zone);
+    NP_fixed(balance_zone) = -zoneNP(fixed_zone);
+
+    % Az összes korlát átírása a két változó NP-re.
+    A2 = A_domain * S;
+    offset = A_domain * NP_fixed;
+
+    b2_old = b_domain - offset;
+    b2_new = b_modified - offset;
+
+    points = cell(2,1);
+    b2 = [b2_old b2_new];
+
+    % Először a régi, utána az új metszet vertexei.
+    for domain = 1:2
+        points{domain} = zeros(0,2);
+
+        % Belső pont keresése a poláris módszerhez.
+        row_length = sqrt(sum(A2.^2,2));
+
+        [center, ~, flag] = linprog([0;0;-1], ...
+            [A2 row_length], b2(:,domain), [], [], ...
+            [-inf;-inf;0], [], options);
+
+        % Üres vagy terület nélküli metszetet nem rajzolunk.
+        if flag <= 0
+            continue
+        end
+
+        if center(3) <= tol
+            continue
+        end
+
+        center = center(1:2);
+        b_shifted = b2(:,domain) - A2 * center;
+
+        polarPoints = unique( ...
+            bsxfun(@rdivide,A2,b_shifted),'rows');
+
+        polarBoundary = convhull( ...
+            polarPoints(:,1),polarPoints(:,2));
+
+        vertices2 = [];
+
+        for j = 1:numel(polarBoundary)-1
+            Q = polarPoints(polarBoundary(j:j+1),:);
+            vertex = center + (Q \ ones(2,1));
+            vertices2(end+1,:) = vertex.';
+        end
+
+        vertices2 = uniquetol(vertices2,1e-8, ...
+            'ByRows',true,'DataScale',1);
+
+        boundary = convhull(vertices2(:,1),vertices2(:,2));
+        points{domain} = vertices2(boundary(1:end-1),:);
+    end
 
     subplot(2,3,k)
     hold on
 
-    fill(points_old(boundary_old,1),points_old(boundary_old,2), ...
-        [0.2 0.5 0.9], 'FaceAlpha',0.25, ...
-        'EdgeColor',[0.2 0.4 0.7], 'LineWidth',1.5);
+    colors = [0.2 0.5 0.9; 0.2 0.7 0.3];
+    names = {'Kiinduló','Módosított'};
 
-    fill(points_new(boundary_new,1),points_new(boundary_new,2), ...
-        [0.2 0.7 0.3], 'FaceAlpha',0.45, ...
-        'EdgeColor',[0.1 0.4 0.2], 'LineWidth',1.5);
+    for domain = 1:2
+        p = points{domain};
 
-    xlabel(char("NP_" + zonenames(z1)), 'Interpreter','none')
-    ylabel(char("NP_" + zonenames(z2)), 'Interpreter','none')
-    title(char(zonenames(z1) + " - " + zonenames(z2)))
+        if isempty(p)
+            continue
+        end
 
-    axis equal
+        fill(p(:,1),p(:,2),colors(domain,:), ...
+            'FaceAlpha',0.25, ...
+            'EdgeColor',colors(domain,:), ...
+            'LineWidth',2, ...
+            'DisplayName',names{domain});
+
+        plot(p(:,1),p(:,2),'o', ...
+            'Color',colors(domain,:), ...
+            'MarkerFaceColor',colors(domain,:), ...
+            'HandleVisibility','off');
+    end
+
+    if ~isempty(points{1})
+        p = points{1};
+        low = min(p,[],1);
+        high = max(p,[],1);
+        padding = 0.15 * (high-low);
+
+        limits = [
+            low(1)-padding(1), high(1)+padding(1), ...
+            low(2)-padding(2), high(2)+padding(2)
+        ];
+
+        % A határt alkotó korlátokat teljes vonallal is jelöljük.
+        % A többi korlát is benne van a számításban.
+        for domain = 1:2
+            p = points{domain};
+
+            if isempty(p)
+                continue
+            end
+
+            for c = 1:size(A2,1)
+                difference = abs( ...
+                    p * A2(c,:).' - b2(c,domain));
+
+                % Ha legalább két vertex a korláton van,
+                % akkor az a sokszög egyik élét határolja.
+                if nnz(difference < 10*tol) < 2
+                    continue
+                end
+
+                if abs(A2(c,2)) > 1e-12
+                    x = linspace(limits(1),limits(2),100);
+                    y = (b2(c,domain)-A2(c,1)*x) / A2(c,2);
+
+                elseif abs(A2(c,1)) > 1e-12
+                    x = [
+                        b2(c,domain)/A2(c,1), ...
+                        b2(c,domain)/A2(c,1)
+                    ];
+                    y = limits(3:4);
+
+                else
+                    continue
+                end
+
+                plot(x,y,'--', ...
+                    'Color',colors(domain,:), ...
+                    'LineWidth',1, ...
+                    'HandleVisibility','off');
+            end
+        end
+
+        axis equal
+        axis(limits)
+    end
+
+    xlabel(char("NP_" + zonenames(z1)), ...
+        'Interpreter','none')
+    ylabel(char("NP_" + zonenames(z2)), ...
+        'Interpreter','none')
+
+    title(sprintf('%s–%s; NP_%s = %.3f', ...
+        zonenames(z1),zonenames(z2), ...
+        zonenames(fixed_zone),zoneNP(fixed_zone)), ...
+        'Interpreter','none')
+
     grid on
-    legend('Kiinduló','Módosított','Location','best')
+
+    if ~isempty(points{1}) || ~isempty(points{2})
+        legend('show','Location','best')
+    else
+        text(0.5,0.5,'Üres metszet', ...
+            'Units','normalized', ...
+            'HorizontalAlignment','center')
+    end
 end
 
-sgtitle('Kiinduló és módosított domain-ek')
+sgtitle('Kiinduló és módosított domain – az összes CBCO-val')
 
 result.DomainFigure = fig;
 result.PlotAvailable = true;
