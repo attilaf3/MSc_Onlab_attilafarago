@@ -180,47 +180,156 @@ result.FRM = FRM;
 result.A_domain = A_domain;
 result.b_domain = b_domain;
 result.b_physical = [Fmax-FRM-F0; Fmax-FRM+F0];
+% result.b_physical = [Fmax-F0; Fmax+F0];
 result.T = T;
 result.UnsafeDirectionIndices = find(isOverloaded);
 result.Tolerance = tol;
 
 %% Piac szűkítése
 
-% biztonságos áramlás
-b_physical = [
-    Fmax - FRM - F0;
-    Fmax - FRM + F0
-];
-% elemenkénti minimum, a szigorúbb lesz figyelembe véve
-b_modified = min(b_domain, b_physical);
+% Betartandó határ minden CBCO-ban
+flow_limit = Fmax - FRM;
+% flow_limit = Fmax;
 
+% pozitív:
+% F0 + PTDF*NP <= flow_limit
+% Ebből: PTDF*NP <= flow_limit - F0
+% negatív:
+% -PTDF*NP <= flow_limit + F0
+b_physical = [
+    flow_limit - F0;
+    flow_limit + F0
+];
+
+% Kezdeti domain-nel való inicializálás
+b_modified = b_domain;
+
+% Az első feladatban megtalált maximumok.
+% első nCBCO érték pozitív, a második nCBCO negatív irányú
+current_max = maxDirectedFlow;
+
+% ebbe, hogy melyik korlátot mennyivel módosítottuk.
+% oszlopok: korlát indexe, régi RAM, új RAM, korlátsértés.
+history = zeros(0,4);
+
+result.b_physical = b_physical;
+result.SafeDomainFeasible = false;
+result.SafeDomainVerified = false;
+result.PlotAvailable = false;
+
+while true
+    % Megnézzük, mennyivel léphető túl a megengedett áramlás.
+    % [flow_limit; flow_limit], mert két irányt vizsgálunk, és így
+    % egyszerűbb
+    excess = current_max - [flow_limit; flow_limit];
+
+    % jelenlegi legnagyobb korlátsértést.
+    % selected az A_domain megfelelő sorának indexe
+    [largest_excess, selected] = max(excess);
+
+    % Ha már egyik irányban sincs korlátsértés, megállunk, akkor break
+    if largest_excess <= tol
+        break
+    end
+
+    % figyelt korlát jelenlegi jobb oldala.
+    old_RAM = b_modified(selected);
+
+    % csak ennek a korlátnak a szigorítása
+    new_RAM = min(old_RAM, b_physical(selected));
+
+ 
+    % numerikus problémák elkerülésére
+    % ne menjen a ciklus a végtelenségig
+    if old_RAM-new_RAM <= tol
+        result.RestrictionFailedIndex = selected;
+        result.b_new = b_modified;
+        return
+    end
+
+    b_modified(selected) = new_RAM;
+
+    % módosítások mentése
+    history(end+1,:) = [
+        selected, old_RAM, new_RAM, largest_excess
+    ];
+
+    % új domainben az új maximum megtalálása
+    % mivel a vágás más túlterhelt pontot is kizárhatott
+    current_max = zeros(2*nCBCO,1);
+
+    for c = 1:nCBCO
+        % pozitív irányú maximum.
+        [~, fval_plus, flag_plus] = linprog( ...
+            -PTDF_cbco(c,:).', ...
+            A_domain, b_modified, ones(1,4), 0, ...
+            -inf(4,1), inf(4,1), options);
+
+        % negatív irányú maximum
+        [~, fval_minus, flag_minus] = linprog( ...
+            PTDF_cbco(c,:).', ...
+            A_domain, b_modified, ones(1,4), 0, ...
+            -inf(4,1), inf(4,1), options);
+
+        % Ez például üres domain miatt is történhet.
+        if flag_plus <= 0 || flag_minus <= 0
+            result.RestrictionFailedCBCO = c;
+            result.RestrictionLPFlags = [flag_plus flag_minus];
+            result.b_new = b_modified;
+            return
+        end
+
+        % Az F0 állandó áramlás hozzáadása a célfüggvényhez
+        current_max(c) = F0(c)-fval_plus;
+        current_max(nCBCO+c) = -F0(c)-fval_minus;
+    end
+
+    % következő körben már ezekből az új maximumokból kerül ki a következő
+    % legnagyobb korlátsértés
+end
+
+% végleges RAM-ok és a soronkénti csökkentések.
 result.b_new = b_modified;
-result.RAMReduction = b_domain - b_modified;
+result.RAMReduction = b_domain-b_modified;
+
+% módosítások sorrendje egy egyszerű táblázatban.
+result.RestrictionHistory = array2table(history, ...
+    'VariableNames', ...
+    {'ConstraintIndex','OldRAM','NewRAM','ExcessBefore'});
+
+% eredeti CBCO-táblából kiindulás
 result.CBCO_safe_table = CBCO_table;
+
+% eredeti RAM-ok
 result.CBCO_safe_table.RAM_market_plus = RAM_plus;
 result.CBCO_safe_table.RAM_market_minus = RAM_minus;
 
-% oszlop átnevezése
-result.CBCO_safe_table.Properties.VariableNames{strcmp(result.CBCO_safe_table.Properties.VariableNames,'AMR_plus')} = 'AMR_market_plus';
-result.CBCO_safe_table.Properties.VariableNames{strcmp(result.CBCO_safe_table.Properties.VariableNames,'AMR_minus')} = 'AMR_market_minus';
+% eredeti AMR-ek
+result.CBCO_safe_table.AMR_market_plus = AMR_plus;
+result.CBCO_safe_table.AMR_market_minus = AMR_minus;
 
-% új RAM-ok értékeinek beírása
+% a szűkítés utáni RAM
 result.CBCO_safe_table.RAM_plus = b_modified(1:nCBCO);
 result.CBCO_safe_table.RAM_minus = b_modified(nCBCO+1:end);
 
-% annak ellenőrzése, hogy maradt e még megengedett pont a szűkítés után
-% eredményt nem tároljuk
-[~, ~, flag] = linprog(zeros(4,1), A_domain, b_modified, ...
-    ones(1,4), 0, -inf(4,1), inf(4,1), options);
+% új  AMR = új RAM - eredeti RAM0.
+result.CBCO_safe_table.AMR_plus = ...
+    b_modified(1:nCBCO)-RAM0_plus;
+
+result.CBCO_safe_table.AMR_minus = ...
+    b_modified(nCBCO+1:end)-RAM0_minus;
+
+% ez is csak anomália detektálásához 
+% 0 a célfüggvény, mert itt csak megengedett pont keresése
+[~, ~, flag] = linprog(zeros(4,1), ...
+    A_domain, b_modified, ones(1,4), 0, ...
+    -inf(4,1), inf(4,1), options);
 
 result.SafeDomainFeasible = flag > 0;
-result.SafeDomainVerified = false;
-result.PlotAvailable = false;
 
 if flag <= 0
     return
 end
-
 %% Az új domain LP-s ellenőrzése
 new_max_plus = zeros(nCBCO,1);
 new_max_minus = zeros(nCBCO,1);
@@ -249,7 +358,8 @@ end
 
 % egymás alá a két irány eredményeit
 new_flow = [new_max_plus; new_max_minus];
-new_overload = max(new_flow - [Fmax-FRM; Fmax-FRM], 0);
+new_overload = max(new_flow - [flow_limit; flow_limit], 0);
+% new_overload = max(new_flow - [Fmax Fmax], 0);
 new_NP = [new_NP_plus; new_NP_minus];
 
 % összehasonlító táblázat
@@ -289,10 +399,14 @@ result.VolumeOld = volume_old;
 result.VolumeNew = volume_new;
 result.VolumeReductionPercent = 100 * (volume_old-volume_new) / volume_old;
 
+
+
 %% ábrák
 
-pairs = nchoosek(1:numel(zonenames),2);
-fig = figure('Color','w');
+
+pairs = nchoosek(1:4,2);
+domain_figures = cell(6,1);
+detail_figures = {};
 
 for k = 1:size(pairs,1)
     z1 = pairs(k,1);
@@ -302,7 +416,6 @@ for k = 1:size(pairs,1)
     fixed_zone = remaining(1);
     balance_zone = remaining(2);
 
-    % NP = S * [NP_z1; NP_z2] + NP_fixed
     S = zeros(4,2);
     S(z1,1) = 1;
     S(z2,2) = 1;
@@ -312,28 +425,26 @@ for k = 1:size(pairs,1)
     NP_fixed(fixed_zone) = zoneNP(fixed_zone);
     NP_fixed(balance_zone) = -zoneNP(fixed_zone);
 
-    % Az összes korlát átírása a két változó NP-re.
-    A2 = A_domain * S;
-    offset = A_domain * NP_fixed;
+    % Az összes korlát átírása két változóra.
+    A2 = A_domain*S;
+    offset = A_domain*NP_fixed;
 
-    b2_old = b_domain - offset;
-    b2_new = b_modified - offset;
-
-    points = cell(2,1);
+    b2_old = b_domain-offset;
+    b2_new = b_modified-offset;
     b2 = [b2_old b2_new];
 
-    % Először a régi, utána az új metszet vertexei.
+    points = cell(2,1);
+
+    % A régi és az új metszet vertexei.
     for domain = 1:2
         points{domain} = zeros(0,2);
 
-        % Belső pont keresése a poláris módszerhez.
         row_length = sqrt(sum(A2.^2,2));
 
         [center, ~, flag] = linprog([0;0;-1], ...
             [A2 row_length], b2(:,domain), [], [], ...
             [-inf;-inf;0], [], options);
 
-        % Üres vagy terület nélküli metszetet nem rajzolunk.
         if flag <= 0
             continue
         end
@@ -343,7 +454,7 @@ for k = 1:size(pairs,1)
         end
 
         center = center(1:2);
-        b_shifted = b2(:,domain) - A2 * center;
+        b_shifted = b2(:,domain)-A2*center;
 
         polarPoints = unique( ...
             bsxfun(@rdivide,A2,b_shifted),'rows');
@@ -355,7 +466,7 @@ for k = 1:size(pairs,1)
 
         for j = 1:numel(polarBoundary)-1
             Q = polarPoints(polarBoundary(j:j+1),:);
-            vertex = center + (Q \ ones(2,1));
+            vertex = center+(Q \ ones(2,1));
             vertices2(end+1,:) = vertex.';
         end
 
@@ -366,111 +477,247 @@ for k = 1:size(pairs,1)
         points{domain} = vertices2(boundary(1:end-1),:);
     end
 
-    subplot(2,3,k)
-    hold on
+    p_old = points{1};
+    p_new = points{2};
 
-    colors = [0.2 0.5 0.9; 0.2 0.7 0.3];
-    names = {'Kiinduló','Módosított'};
+    if isempty(p_old)
+        continue
+    end
 
-    for domain = 1:2
-        p = points{domain};
+    low = min(p_old,[],1);
+    high = max(p_old,[],1);
+    padding = 0.25*(high-low);
 
-        if isempty(p)
+    limits = [
+        low(1)-padding(1), high(1)+padding(1), ...
+        low(2)-padding(2), high(2)+padding(2)
+    ];
+
+    % A régi vagy új határt alkotó szigorított korlátok.
+    cuts = [];
+
+    for c = 1:size(A2,1)
+        if b2_old(c)-b2_new(c) <= tol
             continue
         end
 
-        fill(p(:,1),p(:,2),colors(domain,:), ...
-            'FaceAlpha',0.25, ...
-            'EdgeColor',colors(domain,:), ...
-            'LineWidth',2, ...
-            'DisplayName',names{domain});
+        old_on_line = abs(p_old*A2(c,:).'-b2_old(c)) < 10*tol;
+        new_on_line = false(size(p_new,1),1);
 
-        plot(p(:,1),p(:,2),'o', ...
-            'Color',colors(domain,:), ...
-            'MarkerFaceColor',colors(domain,:), ...
-            'HandleVisibility','off');
+        if ~isempty(p_new)
+            new_on_line = ...
+                abs(p_new*A2(c,:).'-b2_new(c)) < 10*tol;
+        end
+
+        if nnz(old_on_line) >= 2 || nnz(new_on_line) >= 2
+            cuts(end+1,1) = c;
+        end
     end
 
-    if ~isempty(points{1})
-        p = points{1};
-        low = min(p,[],1);
-        high = max(p,[],1);
-        padding = 0.15 * (high-low);
+    % A 0 az áttekintő ábra.
+    % Az A–B metszetnél külön részletes ábrák is készülnek.
+    plot_rows = 0;
 
-        limits = [
-            low(1)-padding(1), high(1)+padding(1), ...
-            low(2)-padding(2), high(2)+padding(2)
-        ];
+    if k == 1
+        plot_rows = [0; cuts];
+    end
 
-        % A határt alkotó korlátokat teljes vonallal is jelöljük.
-        % A többi korlát is benne van a számításban.
-        for domain = 1:2
-            p = points{domain};
+    for picture = 1:numel(plot_rows)
+        selected = plot_rows(picture);
 
-            if isempty(p)
+        fig = figure('Color','w');
+        hold on
+
+        if selected == 0
+            domain_figures{k} = fig;
+            rows_to_draw = cuts;
+        else
+            detail_figures{end+1} = fig;
+            rows_to_draw = selected;
+        end
+
+        % Eredeti domain, pirosas háttérrel.
+        fill(p_old(:,1),p_old(:,2),[1 0.8 0.75], ...
+            'EdgeColor',[0.2 0.4 0.7], ...
+            'LineWidth',2,'HandleVisibility','off');
+
+        % Az összes CBCO-val szűkített domain.
+        if ~isempty(p_new)
+            fill(p_new(:,1),p_new(:,2),[0.75 0.9 0.8], ...
+                'EdgeColor',[0.1 0.4 0.2], ...
+                'LineWidth',2,'HandleVisibility','off');
+        end
+
+        for c = rows_to_draw.'
+            PTDF_row = A2(c,:);
+            limit = b2_new(c);
+
+            if PTDF_row*PTDF_row.' < 1e-12
                 continue
             end
 
-            for c = 1:size(A2,1)
-                difference = abs( ...
-                    p * A2(c,:).' - b2(c,domain));
+            % Régi és eltolt határoló egyenes.
+            if abs(PTDF_row(2)) > 1e-12
+                x = linspace(limits(1),limits(2),100);
 
-                % Ha legalább két vertex a korláton van,
-                % akkor az a sokszög egyik élét határolja.
-                if nnz(difference < 10*tol) < 2
+                y_old = (b2_old(c)-PTDF_row(1)*x) ...
+                    / PTDF_row(2);
+
+                y_new = (limit-PTDF_row(1)*x) ...
+                    / PTDF_row(2);
+
+                plot(x,y_old,'b--','LineWidth',1.3, ...
+                    'HandleVisibility','off');
+
+                plot(x,y_new,'r-','LineWidth',1.5, ...
+                    'HandleVisibility','off');
+            else
+                x_old = b2_old(c)/PTDF_row(1);
+                x_new = limit/PTDF_row(1);
+
+                plot([x_old x_old],limits(3:4),'b--', ...
+                    'LineWidth',1.3,'HandleVisibility','off');
+
+                plot([x_new x_new],limits(3:4),'r-', ...
+                    'LineWidth',1.5,'HandleVisibility','off');
+            end
+
+            number = 0;
+
+            % A régi élek metszése az új korláttal.
+            for j = 1:size(p_old,1)
+                v1 = p_old(j,:);
+                v2 = p_old(mod(j,size(p_old,1))+1,:);
+
+                d1 = PTDF_row*v1.'-limit;
+                d2 = PTDF_row*v2.'-limit;
+
+                if ~((d1 < -tol && d2 > tol) || ...
+                        (d2 < -tol && d1 > tol))
                     continue
                 end
 
-                if abs(A2(c,2)) > 1e-12
-                    x = linspace(limits(1),limits(2),100);
-                    y = (b2(c,domain)-A2(c,1)*x) / A2(c,2);
-
-                elseif abs(A2(c,1)) > 1e-12
-                    x = [
-                        b2(c,domain)/A2(c,1), ...
-                        b2(c,domain)/A2(c,1)
-                    ];
-                    y = limits(3:4);
-
-                else
-                    continue
+                % V1 biztonságos, V2 sértő az adott korlátra.
+                if d1 > 0
+                    temporary = v1;
+                    v1 = v2;
+                    v2 = temporary;
                 end
 
-                plot(x,y,'--', ...
-                    'Color',colors(domain,:), ...
-                    'LineWidth',1, ...
+                t = (limit-PTDF_row*v1.') / ...
+                    (PTDF_row*(v2-v1).');
+
+                w = v1+t*(v2-v1);
+                number = number+1;
+
+                % Merőleges eltolási nyíl a régi határtól.
+                start = w + (b2_old(c)-limit) / ...
+                    (PTDF_row*PTDF_row.') * PTDF_row;
+
+                movement = w-start;
+
+                quiver(start(1),start(2), ...
+                    movement(1),movement(2),0, ...
+                    'Color','c','LineWidth',1.5, ...
+                    'MaxHeadSize',0.4, ...
+                    'HandleVisibility','off');
+
+                % A részletes ábrán az él és a pontok jelölése.
+                if selected ~= 0
+                    plot([v1(1) v2(1)],[v1(2) v2(2)], ...
+                        'Color',[0.9 0.5 0.1], ...
+                        'LineWidth',3,'HandleVisibility','off');
+
+                    plot(v1(1),v1(2),'bo', ...
+                        'MarkerFaceColor','b','MarkerSize',7, ...
+                        'HandleVisibility','off');
+
+                    plot(v2(1),v2(2),'rx', ...
+                        'LineWidth',2,'MarkerSize',10, ...
+                        'HandleVisibility','off');
+
+                    plot(w(1),w(2),'mo', ...
+                        'MarkerFaceColor','m','MarkerSize',8, ...
+                        'HandleVisibility','off');
+
+                    text(v1(1),v1(2), ...
+                        sprintf('  V1(%d)',number),'Color','b');
+
+                    text(v2(1),v2(2), ...
+                        sprintf('  V2(%d): sértő',number), ...
+                        'Color','r');
+
+                    text(w(1),w(2), ...
+                        sprintf('  W%d; t = %.3f',number,t), ...
+                        'Color','m');
+                end
+            end
+        end
+
+        % Az áttekintő ábrákon a régi és új vertexek.
+        if selected == 0
+            old_is_safe = all( ...
+                A2*p_old.' <= b2_new+tol,1).';
+
+            plot(p_old(old_is_safe,1), ...
+                p_old(old_is_safe,2),'bo', ...
+                'MarkerFaceColor','b', ...
+                'HandleVisibility','off');
+
+            plot(p_old(~old_is_safe,1), ...
+                p_old(~old_is_safe,2),'rx', ...
+                'LineWidth',1.5,'MarkerSize',8, ...
+                'HandleVisibility','off');
+
+            if ~isempty(p_new)
+                plot(p_new(:,1),p_new(:,2),'mo', ...
+                    'MarkerFaceColor','m', ...
                     'HandleVisibility','off');
             end
         end
 
+        h1 = plot(nan,nan,'b--');
+        h2 = plot(nan,nan,'r-');
+        h3 = plot(nan,nan,'s', ...
+            'Color',[0.1 0.4 0.2], ...
+            'MarkerFaceColor',[0.75 0.9 0.8]);
+
+        legend([h1 h2 h3], ...
+            {'Eredeti korlát','Eltolt korlát', ...
+            'Összes CBCO-val szűkített domain'}, ...
+            'Location','best');
+
+        xlabel(char("NP_"+zonenames(z1)),'Interpreter','none')
+        ylabel(char("NP_"+zonenames(z2)),'Interpreter','none')
+
+        if selected == 0
+            title(sprintf('%s–%s; NP_%s = %.4f', ...
+                zonenames(z1),zonenames(z2), ...
+                zonenames(fixed_zone),zoneNP(fixed_zone)), ...
+                'Interpreter','none');
+        else
+            if selected <= nCBCO
+                cbco = selected;
+                direction_text = '+';
+            else
+                cbco = selected-nCBCO;
+                direction_text = '-';
+            end
+
+            title(sprintf('%s / %s; %s irány; NP_%s = %.4f', ...
+                CB(cbco),CO(cbco),direction_text, ...
+                zonenames(fixed_zone),zoneNP(fixed_zone)), ...
+                'Interpreter','none');
+        end
+
         axis equal
         axis(limits)
-    end
-
-    xlabel(char("NP_" + zonenames(z1)), ...
-        'Interpreter','none')
-    ylabel(char("NP_" + zonenames(z2)), ...
-        'Interpreter','none')
-
-    title(sprintf('%s–%s; NP_%s = %.3f', ...
-        zonenames(z1),zonenames(z2), ...
-        zonenames(fixed_zone),zoneNP(fixed_zone)), ...
-        'Interpreter','none')
-
-    grid on
-
-    if ~isempty(points{1}) || ~isempty(points{2})
-        legend('show','Location','best')
-    else
-        text(0.5,0.5,'Üres metszet', ...
-            'Units','normalized', ...
-            'HorizontalAlignment','center')
+        grid on
     end
 end
 
-sgtitle('Kiinduló és módosított domain – az összes CBCO-val')
-
-result.DomainFigure = fig;
+result.DomainFigures = domain_figures;
+result.DetailFigures = detail_figures;
 result.PlotAvailable = true;
 end
 
