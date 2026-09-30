@@ -12,23 +12,40 @@ nodezone = ["A";"A";"B";"B";"A";"B";"B";"C";"C";"C";"C";"D";"D";"D";"D"];
 
 
 % lsqlin-ből kapott np, ha finalram
-nodesnp = [ ...
-     143.3333;
-      69.0319;
-     -77.2379;
-     -53.2243;
-     195.6002;
-     -77.3673;
-    -119.5547;
-      88.7992;
-     103.8555;
-     -56.3812;
-    -143.6901;
-      71.0129;
-    -144.1777;
-     140.0000;
-    -140.0000
-];
+% nodesnp = 0.8 * [ ...
+%      143.3333;
+%       69.0319;
+%      -77.2379;
+%      -53.2243;
+%      195.6002;
+%      -77.3673;
+%     -119.5547;
+%       88.7992;
+%      103.8555;
+%      -56.3812;
+%     -143.6901;
+%       71.0129;
+%     -144.1777;
+%      140.0000;
+%     -140.0000
+% ];
+nodesnp = [...
+  114.6666;
+   55.2255;
+  -61.7903;
+  -42.5794;
+  156.4802;
+  -61.8938;
+  -95.6438;
+   71.0394;
+   83.0844;
+  -45.1048;
+ -114.9521;
+   56.8103;
+ -115.3422;
+  112.0000;
+ -112.0000
+    ];
 
 
 
@@ -233,7 +250,7 @@ LODF_table = array2table(LODF, "RowNames", edgesname, "VariableNames", edgesname
 
 %% CBCO
 
-critical_outages = ["L1", "L20", "L22"]; 
+critical_outages = ["L1", "L2","L7","L20", "L21","L22"]; 
 
 critical_outages_idx = [];
 for k = 1:numel(critical_outages)
@@ -243,8 +260,8 @@ for k = 1:numel(critical_outages)
     end
 end
 
-cb_names = {};        
-co_names = {};        
+cb_names = strings(0,1);
+co_names = strings(0,1);      
 fref_list = [];
 f0_list = [];
 ptdf_cbco_matrix = [];
@@ -255,14 +272,15 @@ amr_plus_list = [];
 amr_minus_list = [];
 finalram_plus_list = [];
 finalram_minus_list = [];
+fmax_list = [];
 
 
 % alapeset
 for cb_idx = 1:height(edges)
     cb_name = edges.EdgeName(cb_idx);
     
-    cb_names{end+1, 1} = cb_name;
-    co_names{end+1, 1} = "BaseCase";
+    cb_names(end+1,1) = cb_name;
+    co_names(end+1,1) = "BaseCase";
     
     fref_base = edges.Fref(cb_idx);
     f0_base = edges.F0(cb_idx);
@@ -288,6 +306,7 @@ for cb_idx = 1:height(edges)
     finalram_minus_list(end+1,1) = finalram_minus_base;
     f0_list(end+1,1) = f0_base;
     fref_list(end+1,1) = fref_base;
+    fmax_list(end+1,1) = edges.Fmax(cb_idx);
     
     % ptdf_cbco_matrix(end+1,:) = zonetozonePTDF_all(cb_idx,:);
     ptdf_cbco_matrix(end+1,:) = zonetoslackPTDF(cb_idx,:);
@@ -329,9 +348,9 @@ for m = 1:numel(critical_outages_idx)
         finalram_plus_cbo  = ram0_plus_cbo  + amr_plus_cbo;
         finalram_minus_cbo = ram0_minus_cbo + amr_minus_cbo;
         
-  
-        cb_names{end+1, 1} = cb_name;
-        co_names{end+1, 1} = co_name + " kiesése";
+          
+        cb_names(end+1,1) = cb_name;
+        co_names(end+1,1) = co_name + " kiesése";
 
         fref_list(end+1,1) = fref_cbo;
         f0_list(end+1,1) = f0_cbo;
@@ -345,18 +364,14 @@ for m = 1:numel(critical_outages_idx)
         amr_minus_list(end+1,1) = amr_minus_cbo;
         finalram_plus_list(end+1,1) = finalram_plus_cbo;
         finalram_minus_list(end+1,1) = finalram_minus_cbo;
+        fmax_list(end+1,1) = edges.Fmax(cb_idx);
     end
 end
 
-CBCO_table = table(cb_names, co_names, fref_list, f0_list, ...
-    ram0_plus_list, amr_plus_list, finalram_plus_list, ...
-    ram0_minus_list, amr_minus_list, finalram_minus_list, ...
-    minram_list, ...
+CBCO_table = table(cb_names, co_names, fmax_list, fref_list, ...
+    finalram_plus_list, finalram_minus_list, amr_plus_list, amr_minus_list, ...
     'VariableNames', {'CriticalBranch', 'CriticalOutage', ...
-    'Fref', 'F0', ...
-    'RAM0_plus', 'AMR_plus', 'finalRAM_plus', ...
-    'RAM0_minus', 'AMR_minus', 'finalRAM_minus', ...
-    'minRAM'});
+    'Fmax', 'Fref', 'RAM_plus', 'RAM_minus', 'AMR_plus', 'AMR_minus'});
 
 % ztzPTDF hozzáadás
 % for z = 1:ztznum
@@ -399,7 +414,7 @@ end
 %     col_name = "PTDF_" + noslacknodesname(n);
 %     CBCO_table.(col_name) = ntzPTDF_cbco(:,n);
 % end
-
+disp(CBCO_table)
 
 %% F0 és RAM0 tábla CBCO-kra
 
@@ -418,7 +433,7 @@ F0_RAM0_table = table( ...
     finalram_minus_list, ...
     'VariableNames', {'CB','CO','F0','Fmax','FRM', ...
     'RAM0_plus','RAM0_minus','minRAM', ...
-    'AMR_plus','AMR_minus','finalRAM_plus','finalRAM_minus'})
+    'AMR_plus','AMR_minus','finalRAM_plus','finalRAM_minus'});
 %% PTDF * NP <= RAM tábla
 
 % PTDF⋅NP<=RAM+
@@ -457,12 +472,21 @@ PTDF_NP_RAM_table = table( ...
 %     -ntsPTDF_cbco
 % ];
 % 
+% [~, edgeIndex] = ismember( ...
+%     string(CBCO_table.CriticalBranch), string(edges.EdgeName));
+% 
+% limit = edges.Fmax(edgeIndex) - edges.FRM(edgeIndex);
 % 
 % % az egyenlőtlenségek jobb oldala
 % bineq = [
-%      finalram_plus_list;
-%      finalram_minus_list
+%     limit;
+%     limit
 % ];
+% 
+% % bineq = [
+% %      finalram_plus_list;
+% %      finalram_minus_list
+% % ];
 % 
 % 
 % % egységmátrix, mert min(Cx-xref)^2
@@ -521,6 +545,16 @@ PTDF_NP_RAM_table = table( ...
 %     'PTDFxNP_plus','RAM_plus','Difference_plus', ...
 %     'PTDFxNP_minus','RAM_minus','Difference_minus'})
 
+
+%% Validácio es piacszűkítés
+
+result = validation(edges, zonetoslackPTDF, LODF, ...
+    zoneNP, zonenames, Ramr);
+
+CBCO_all_table = result.CBCO_table;
+reference_table = result.ReferenceTable;
+overload_table = result.OverloadedTable;
+CBCO_safe_table = result.CBCO_safe_table;
 
 %% ÁBRÁK
 edgetable = mergevars(edges,["From","To"],"NewVariableName","EndNodes");
@@ -594,6 +628,9 @@ plot_network(G, slacknodename, ...
 
 
 % Áramlás kereskedelem nélkül
+% NP0​=NPref​−GSK⋅NPz​
+% F0​=PTDFn2s​⋅NP0
+% F0​=Fref​−PTDFz2s​⋅NPz
 nodes.NP0 = zeros(height(nodes),1);
 nodes.NP0(nodes.NodeName ~= slacknodename) = ...
     nodes.NP(nodes.NodeName ~= slacknodename) - GSK*zoneNP;
