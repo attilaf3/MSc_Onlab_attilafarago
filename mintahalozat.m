@@ -12,7 +12,7 @@ nodezone = ["A";"A";"B";"B";"A";"B";"B";"C";"C";"C";"C";"D";"D";"D";"D"];
 
 
 % lsqlin-ből kapott np, ha finalram
-% nodesnp = 0.8 * [ ...
+% nodesnp = 0.8*[ ...
 %      143.3333;
 %       69.0319;
 %      -77.2379;
@@ -29,6 +29,8 @@ nodezone = ["A";"A";"B";"B";"A";"B";"B";"C";"C";"C";"C";"D";"D";"D";"D"];
 %      140.0000;
 %     -140.0000
 % ];
+
+
 nodesnp = [...
   114.6666;
    55.2255;
@@ -199,10 +201,6 @@ zoneNP_table = table(zonenames', zoneNP, ...
 % F0 = Fref - (nodetoslackPTDF * GSK) * zoneNP
 % F0 = Fref - zonetoslackPTDF * zoneNP
 edges.F0 = edges.Fref - zonetoslackPTDF * zoneNP;
-
-% RAM
-edges.RAM0 = edges.Fmax - edges.FRM - edges.F0;
-
 
 % Minimum RAM követelmény
 Ramr = 0.70;
@@ -437,9 +435,7 @@ F0_RAM0_table = table( ...
 %% PTDF * NP <= RAM tábla
 
 % PTDF⋅NP<=RAM+
-% −PTDF⋅NP<=RAM−
-NP = zoneNP;                 
-             
+% −PTDF⋅NP<=RAM−                     
 left_plus = ptdf_cbco_matrix * zoneNP;
 left_minus = -ptdf_cbco_matrix * zoneNP;
 
@@ -544,15 +540,29 @@ PTDF_NP_RAM_table = table( ...
 %     'VariableNames', {'CB','CO', ...
 %     'PTDFxNP_plus','RAM_plus','Difference_plus', ...
 %     'PTDFxNP_minus','RAM_minus','Difference_minus'})
+% 
 
 
-%% Validácio es piacszűkítés
+%% Redispatch – négy külön eset ugyanabból a kiinduló hálózatból
+
+rd1 = redispatch(1,nodes,edges,nodetoslackPTDF,GSK, ...
+    LODF,zoneNP,zonenames,slacknodeid,Ramr);
+
+rd2 = redispatch(2,nodes,edges,nodetoslackPTDF,GSK, ...
+    LODF,zoneNP,zonenames,slacknodeid,Ramr);
+
+rd3 = redispatch(3,nodes,edges,nodetoslackPTDF,GSK, ...
+    LODF,zoneNP,zonenames,slacknodeid,Ramr);
+
+rd4 = redispatch(4,nodes,edges,nodetoslackPTDF,GSK, ...
+    LODF,zoneNP,zonenames,slacknodeid,Ramr);
+%% Validáció es piacszűkítés
 
 result = validation(edges, zonetoslackPTDF, LODF, ...
     zoneNP, zonenames, Ramr);
 
 CBCO_all_table = result.CBCO_table;
-reference_table = result.ReferenceTable;
+ref_table = result.RefTable;
 overload_table = result.OverloadedTable;
 CBCO_safe_table = result.CBCO_safe_table;
 
