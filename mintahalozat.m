@@ -12,6 +12,7 @@ nodezone = ["A";"A";"B";"B";"A";"B";"B";"C";"C";"C";"C";"D";"D";"D";"D"];
 
 
 % lsqlin-ből kapott np, ha finalram
+% DD2FA lsqlin kód még meg van?
 % nodesnp = 0.8*[ ...
 %      143.3333;
 %       69.0319;
@@ -215,6 +216,7 @@ edges.finalRAM_plus = edges.RAM0_plus + edges.AMR_plus;
 % Negatív irány
 % -PTDF*NP <= RAM_minus
 edges.RAM0_minus = edges.Fmax - edges.FRM + edges.F0;
+%DD2FA az egyik élt fordítsd meg, hogy az AMR_minus-t is tudd tesztelni!
 edges.AMR_minus = max(edges.minRAM - edges.RAM0_minus, 0);
 edges.finalRAM_minus = edges.RAM0_minus + edges.AMR_minus;
 
@@ -247,6 +249,7 @@ LODF_table = array2table(LODF, "RowNames", edgesname, "VariableNames", edgesname
 
 
 %% CBCO
+% DD2FA MATLAB: alább redundás a kód, az AMR számítást pl. kitehetnéd egy függvénybe, ami kap egy CBCO listát, a Fref és NP-vel, s kiszámolja. Az alapesetet nem kell feltétlen megkülönböztetni a kontingenciáktól. 
 
 critical_outages = ["L1", "L2","L7","L20", "L21","L22"]; 
 
@@ -377,6 +380,7 @@ CBCO_table = table(cb_names, co_names, fmax_list, fref_list, ...
 %     CBCO_table.(col_name) = ptdf_cbco_matrix(:, z);
 % end
 % ztsPTDF hozzáadás
+% DD2FA: zts helyett inkább z2s, nts helyett n2s
 for z = 1:zonenum
     col_name = "PTDF_" + zonenames(z);
     CBCO_table.(col_name) = ptdf_cbco_matrix(:, z);
@@ -433,6 +437,7 @@ F0_RAM0_table = table( ...
     'RAM0_plus','RAM0_minus','minRAM', ...
     'AMR_plus','AMR_minus','finalRAM_plus','finalRAM_minus'});
 %% PTDF * NP <= RAM tábla
+% DD2FA: ezt a részt nem értem.
 
 % PTDF⋅NP<=RAM+
 % −PTDF⋅NP<=RAM−                     
@@ -457,6 +462,7 @@ PTDF_NP_RAM_table = table( ...
 
 
 % %% LSQLIN - node NP
+% DD2FA: szóval itt van. MATLAB/cleancode: ezeket tedd ki függvénybe, neked is gyorsabb és hosszútávon használhatóbb kódod lesz.
 % 
 % % Referencia np vektor az optimalizáláshoz az eredeti vektor
 % % slack nélküli 14 db csomóponti NP
@@ -544,29 +550,32 @@ PTDF_NP_RAM_table = table( ...
 
 
 %% Redispatch – négy külön eset ugyanabból a kiinduló hálózatból
-
-rd1 = redispatch(1,nodes,edges,nodetoslackPTDF,GSK, ...
-    LODF,zoneNP,zonenames,slacknodeid,Ramr);
-
-rd2 = redispatch(2,nodes,edges,nodetoslackPTDF,GSK, ...
-    LODF,zoneNP,zonenames,slacknodeid,Ramr);
-
-rd3 = redispatch(3,nodes,edges,nodetoslackPTDF,GSK, ...
-    LODF,zoneNP,zonenames,slacknodeid,Ramr);
-
-rd4 = redispatch(4,nodes,edges,nodetoslackPTDF,GSK, ...
-    LODF,zoneNP,zonenames,slacknodeid,Ramr);
+% 
+% rd1 = redispatch(1,nodes,edges,nodetoslackPTDF,GSK, ...
+%     LODF,zoneNP,zonenames,slacknodeid,Ramr);
+% 
+% rd2 = redispatch(2,nodes,edges,nodetoslackPTDF,GSK, ...
+%     LODF,zoneNP,zonenames,slacknodeid,Ramr);
+% 
+% rd3 = redispatch(3,nodes,edges,nodetoslackPTDF,GSK, ...
+%     LODF,zoneNP,zonenames,slacknodeid,Ramr);
+% 
+% rd4 = redispatch(4,nodes,edges,nodetoslackPTDF,GSK, ...
+%     LODF,zoneNP,zonenames,slacknodeid,Ramr);
 %% Validáció es piacszűkítés
-
-result = validation(edges, zonetoslackPTDF, LODF, ...
-    zoneNP, zonenames, Ramr);
-
-CBCO_all_table = result.CBCO_table;
-ref_table = result.RefTable;
-overload_table = result.OverloadedTable;
-CBCO_safe_table = result.CBCO_safe_table;
+% 
+% result = validation(edges, zonetoslackPTDF, LODF, ...
+%     zoneNP, zonenames, Ramr);
+% 
+% CBCO_all_table = result.CBCO_table;
+% ref_table = result.RefTable;
+% overload_table = result.OverloadedTable;
+% CBCO_safe_table = result.CBCO_safe_table;
 
 %% ÁBRÁK
+% DD2FA Az ábrákon a node nevek első betűje a zóna legyen (sorszáma maradhat 1-től tizenötig)
+
+% DD2FA kód szempontjából gyilkos, ha itt egy olyan változót használt (pl. nodefrom), amit többszáz sorral feljebb állítottál be. Akkor inkább ott ábrázolj, ahol megcsináltad. Max készítesz egy logikai változót az elejére, hogy kérsz-e ábrát, vagy sem.
 edgetable = mergevars(edges,["From","To"],"NewVariableName","EndNodes");
 edgetable = movevars(edgetable,"EndNodes","Before",1);
 
@@ -596,6 +605,7 @@ plot_network(G, slacknodename, sprintf('Áramlás + %g MW node-to-node: %s -> %s
 
 
 % Zone-to-slack PTDF egy kiválasztott zónára
+% DD2FA: a zónákban ekkor szemléltetőbb, ha a csomóponti teljesítményVÁLTOZÁSt írod, és az éleken is változást
 [~, loc] = ismember(G.Edges.EdgeName, edges.EdgeName);
 G.Edges.Label = compose("%s: %.1f",G.Edges.EdgeName, zonetoslackPTDF(loc,zoneid_plot));
 plot_network(G, slacknodename, ... 

@@ -74,5 +74,6 @@ Y_line = diag(1./G.Edges.Resistance(loc,:));
 
 % rendszer mátrixa:
 Y_bus = A * Y_line * A';
+% DD2FA: Ezt mire használod?
 
 
