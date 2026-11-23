@@ -42,20 +42,7 @@ Edge_table = table([edge_s edge_t], edge_name, edge_ohm, ...
 G = digraph(Edge_table,Node_table);
 % [~,loc] = ismember(Edge_table.Name, G.Edges.Name);
 % G.Edges(loc,:);
-p = plot(G,'NodeLabel',G.Nodes.Name, 'EdgeLabel',G.Edges.Name)
-p.XData = 2* [0.0; 0.0; 0.0; 0.0; 2.6; 3.4; 3.4; 4.7; 
-    5.1; 7.5; 9.7; 9.7; 6.3; 6.2; 9.4];
-p.YData = 2* [7.5; 5.2; 2.7; 0.4; 5.1; 3.0; 0.6; 7.6; 
-    5.0; 5.5; 7.2; 3.3; 2.6; 0.6; 0.7];
-p.MarkerSize = 7;
-
-% Különböző zónák csomópontjaihoz eltérő színek rendelése
-highlight(p, G.Nodes.Zone =="A",'NodeColor','red');
-highlight(p, G.Nodes.Zone =="B",'NodeColor','green');
-highlight(p, G.Nodes.Zone =="C",'NodeColor','blue');
-highlight(p, G.Nodes.Zone =="D",'NodeColor','magenta');
-
-
+p = plotgraph(G,G.Nodes.Name, G.Edges.Name);
 
 slack = "N10";
 zones = unique(G.Nodes.Zone);
@@ -69,8 +56,50 @@ end
 gsk(find(G.Nodes.Name == slack),:) = [];
 
 
-% n2sPTDF, z2sPTDF
-[n2sPTDF, z2sPTDF] = ptdf(G, Edge_table, slack, gsk)
+% n2sPTDF, z2sPTDF függvény hívása
+[n2sPTDF, z2sPTDF] = ptdf(G, Edge_table, slack, gsk);
 
 
+% Fref
+ref_exp = G.Nodes.("Reference export");
+ref_exp(find(G.Nodes.Name == slack)) = [];
+f_ref = n2sPTDF * ref_exp;
+[~,loc]=ismember(G.Edges.Name, Edge_table.Name);
+G.Edges.("Reference flow") = f_ref(loc);
 
+p_fref = plotgraph(G, G.Nodes.("Reference export"), G.Edges.("Reference flow"))
+
+% lodf függvény hívása
+LODF = lodf(n2sPTDF, slack, G, Edge_table);
+
+% zero balance nettó pozíciók (zónák)
+ref_net_pos = zeros(numel(zones),1);
+for id = 1:height(ref_net_pos);
+    node_id = find(G.Nodes.Zone == zones(id));
+    ref_net_pos(id) = sum(G.Nodes.("Reference export")(node_id));
+end
+
+% zero balance áramlás
+f_0 = f_ref - z2sPTDF * ref_net_pos;
+[~,loc]=ismember(G.Edges.Name, Edge_table.Name);
+G.Edges.("Zero balance reference flow") = f_0(loc);
+
+% zero balance áramlás plot
+% zero balance állapotbeli exportok: ref_exp_0
+ref_exp_0 = ref_exp - gsk * ref_net_pos;
+slack_id = find(G.Nodes.Name == slack);
+ref_exp_0 = [ref_exp_0(1:slack_id-1); 0; ref_exp_0(slack_id:end)];
+G.Nodes.("Zero balance reference export") = ref_exp_0;
+
+p_f0 = plotgraph(G, G.Nodes.("Zero balance reference export"), G.Edges.("Zero balance reference flow"))
+
+% f_max, min_ram, frm
+f_max = 200;
+min_ram = 0.7 * f_max;
+frm = 0.1 * f_max;
+
+% cbco előállítása
+CBCO_table = cbco(z2sPTDF, LODF, G, Edge_table, f_max, min_ram, frm, zones, ref_net_pos);
+
+% presolve cbco
+presolved_CBCO_table = presolve(CBCO_table, zones);

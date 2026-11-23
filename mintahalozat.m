@@ -1,5 +1,5 @@
-clc
-clear all
+% clc
+% clear all
 
 %% Configure network
 % Csomóponti table
@@ -248,7 +248,7 @@ LODF_table = array2table(LODF, "RowNames", edgesname, "VariableNames", edgesname
 
 %% CBCO
 
-critical_outages = ["L1", "L2","L7","L20", "L21","L22"]; 
+critical_outages = edgesname; 
 
 critical_outages_idx = [];
 for k = 1:numel(critical_outages)
