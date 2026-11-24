@@ -4,16 +4,23 @@
 
 
 clc
-% clearvars
+clearvars
 
 
 % Csomópontok
 node_name = ["N1"; "N2"; "N3"; "N4"; "N5"; "N6"; "N7"; 
     "N8"; "N9"; "N10"; "N11"; "N12"; "N13"; "N14"; "N15"];
 
-node_ref_exp = [114.6666; 55.2255;-61.7903; -42.5794; 156.4802; -61.8938; -95.6438; 
-    71.0394;  83.0844; -45.1048; -114.9521; 56.8103; -115.3422; 112.0000; -112.0000];
-node_ref_exp = new_node_ref_exp
+% lsqlin előtti
+% node_ref_exp = [114.6666; 55.2255;-61.7903; -42.5794; 156.4802; -61.8938; -95.6438; 
+%     71.0394;  83.0844; -45.1048; -114.9521; 56.8103; -115.3422; 112.0000; -112.0000];
+% lsqlin utáni
+node_ref_exp =   [112.3090; 56.7615; -64.3279; -46.2087; 156.9740;-50.7015; -100.2711;
+    50.4504; 63.7553; -31.0219; -89.2722; 63.3465; -100.7891; 45.8177; -66.8218];
+
+% egy másik, hogy szemléletesebb legyen a validáció
+% node_ref_exp = [69.1015; 97.9449; -7.6923; -74.9330; 206.7033; -69.3867; -205.0673;
+       % 4.8491; 4.8491; -37.9992; -140.4158; 67.2079; -25.5223; 115.2099; -4.8491];
 
 node_zone = ["A";"A";"B";"B";"A";"B";"B";"C";"C";"C";"C";"D";"D";"D";"D"];
 
@@ -113,3 +120,15 @@ frm = 0.1 * f_max;
 
 % presolve cbco
 presolved_CBCO_table = presolve(CBCO_table, zones);
+
+% validáció
+% true: R sugarú környezetben
+
+% false: teljes presolved domain
+CBCO_with_IVA = validation(presolved_CBCO_table, zones);
+
+
+% redispatch
+redispatch_result_table = redispatch(CBCO_table, node_ref_exp, ...
+    gsk_for_lsqlin, n2sPTDF_cont, n2sPTDF_for_lsqlin, ...
+    presolved_CBCO_table, zones);

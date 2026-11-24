@@ -32,9 +32,11 @@ redundant_rows = [];
         A = [z2sPTDF_cbco];
         b = [RAM_cbco];
         f = [-vizsgalt_a];
-        [~, fval, ~] = linprog(f, A, b, Aeq, beq);
+        options = optimoptions('linprog', 'Display', 'none');
+        [~, fval, ~] = linprog(f, A, b, Aeq, beq, [], [], options);
 
-        if -fval >= vizsgalt_b
+        % egyenlőség esetén is redundánsak tekinthető
+        if -fval > vizsgalt_b
             not_redundant_rows(end+1) = cbco_id;
         else
             redundant_rows(end+1) = cbco_id;

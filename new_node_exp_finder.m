@@ -1,4 +1,5 @@
-function [node_ref_exp_new] = new_node_exp_finder(cbco_table, node_ref_exp_old, n2sPTDF_for_lsqlin, gsk_for_lsqlin, n2sPTDF_cont)
+function [node_ref_exp_new] = new_node_exp_finder(cbco_table, ...
+    node_ref_exp_old, n2sPTDF_for_lsqlin, gsk_for_lsqlin, n2sPTDF_cont)
 
     C = eye(height(node_ref_exp_old));
     d = [node_ref_exp_old];
