@@ -17,7 +17,8 @@ redundant_rows = [];
 
 % végig iterálok az összes cbco-n
     for cbco_id = 1:height(cbco_table)
-        z2sPTDF_cbco = [cbco_table.z2sPTDF_A cbco_table.z2sPTDF_B cbco_table.z2sPTDF_C cbco_table.z2sPTDF_D]; 
+        z2sPTDF_cbco = [cbco_table.z2sPTDF_A cbco_table.z2sPTDF_B cbco_table.z2sPTDF_C cbco_table.z2sPTDF_D];
+        % z2sPTDF_cbco = table2array(cbco_table(:,3:6));
         RAM_cbco = cbco_table.RAM;
 
         % az adott CBCO-t úgy vizsgálom, hogy a baloldala lesz az adott LP

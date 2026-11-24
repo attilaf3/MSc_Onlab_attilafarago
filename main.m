@@ -4,19 +4,20 @@
 
 
 clc
-clearvars
+% clearvars
 
 
 % Csomópontok
 node_name = ["N1"; "N2"; "N3"; "N4"; "N5"; "N6"; "N7"; 
     "N8"; "N9"; "N10"; "N11"; "N12"; "N13"; "N14"; "N15"];
 
-node_ref_export = [114.6666; 55.2255;-61.7903; -42.5794; 156.4802; -61.8938; -95.6438; 
+node_ref_exp = [114.6666; 55.2255;-61.7903; -42.5794; 156.4802; -61.8938; -95.6438; 
     71.0394;  83.0844; -45.1048; -114.9521; 56.8103; -115.3422; 112.0000; -112.0000];
+node_ref_exp = new_node_ref_exp
 
 node_zone = ["A";"A";"B";"B";"A";"B";"B";"C";"C";"C";"C";"D";"D";"D";"D"];
 
-Node_table = table(node_name, node_ref_export, node_zone,'VariableNames',{'Name', 'Reference export', 'Zone'})
+Node_table = table(node_name, node_ref_exp, node_zone,'VariableNames',{'Name', 'Reference export', 'Zone'})
 
 
 % Vezetékek
@@ -53,12 +54,18 @@ for col = 1:width(gsk)
     node_id = find(G.Nodes.Zone == zones(zone_id));
     gsk(node_id,col) = 1 / numel(node_id);
 end
+% lsqlin-hez a slackoszlopos gsk szükséges
+gsk_for_lsqlin = gsk;
+
 gsk(find(G.Nodes.Name == slack),:) = [];
 
 
 % n2sPTDF, z2sPTDF függvény hívása
 [n2sPTDF, z2sPTDF] = ptdf(G, Edge_table, slack, gsk);
 
+% slack oszlop visszahelyezése a ptdf-be
+slack_id = find(G.Nodes.Name == slack);
+n2sPTDF_for_lsqlin = [n2sPTDF(:,1:slack_id-1), zeros(height(G.Edges),1), n2sPTDF(:,slack_id:end)];
 
 % Fref
 ref_exp = G.Nodes.("Reference export");
@@ -99,7 +106,10 @@ min_ram = 0.7 * f_max;
 frm = 0.1 * f_max;
 
 % cbco előállítása
-CBCO_table = cbco(z2sPTDF, LODF, G, Edge_table, f_max, min_ram, frm, zones, ref_net_pos);
+[CBCO_table, n2sPTDF_cont] = cbco(n2sPTDF_for_lsqlin, z2sPTDF, LODF, G, Edge_table, f_max, min_ram, frm, zones, ref_net_pos);
+
+% lsqlin
+% new_node_ref_exp = new_node_exp_finder(CBCO_table, node_ref_exp, n2sPTDF_for_lsqlin, gsk_for_lsqlin, n2sPTDF_cont);
 
 % presolve cbco
 presolved_CBCO_table = presolve(CBCO_table, zones);

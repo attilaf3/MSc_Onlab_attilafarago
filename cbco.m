@@ -1,4 +1,4 @@
-function [cbco_table] = cbco(z2sPTDF, LODF, G, Edge_table, f_max, min_ram, frm, zones, ref_net_pos)
+function [cbco_table, n2sPTDF_cont] = cbco(n2sPTDF_for_lsqlin, z2sPTDF, LODF, G, Edge_table, f_max, min_ram, frm, zones, ref_net_pos)
 
     % alapeset
     z2sPTDF_basecase = [z2sPTDF; -z2sPTDF];
@@ -78,12 +78,18 @@ function [cbco_table] = cbco(z2sPTDF, LODF, G, Edge_table, f_max, min_ram, frm, 
     
     cbco_table = [cbco_table_basecase; cbco_table_cont];
 
-    % fmax, minram, fref, f0
+    % fmax, minram, fref, f0, FRM
     cbco_table.Fmax = f_max * ones(height(cbco_table),1);
     cbco_table.minRAM = min_ram * ones(height(cbco_table),1);
+    cbco_table.FRM = frm * ones(height(cbco_table),1);
 
     % negatív irányban (-1)-gyel szorozva a flow, igazítva ezzel a
     % korlátok kényelmes felírásához
     cbco_table.Fref = [f_ref_basecase; -f_ref_basecase; f_ref_cont; -f_ref_cont];
-    cbco_table.F0 = [f_0_basecase; -f_0_basecase; f_0_cont; -f_0_cont]
+    cbco_table.F0 = [f_0_basecase; -f_0_basecase; f_0_cont; -f_0_cont];
+
+    % lsqlinhez n2sPTDF
+    n2sPTDF_cont = n2sPTDF_for_lsqlin(cb_id,:) + lodf_cbco .* n2sPTDF_for_lsqlin(co_id,:);
+    n2sPTDF_cont = [n2sPTDF_cont; -n2sPTDF_cont];
+
 end
