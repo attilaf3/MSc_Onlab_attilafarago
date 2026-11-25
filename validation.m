@@ -1,4 +1,4 @@
-function [cbco_with_iva] = validation(cbco_table, zones)
+function [cbco_with_iva] = validation(cbco_table, zones, local, radius, ref_net_pos)
 
     cbco_with_iva = cbco_table;
     iva = zeros(height(cbco_with_iva),1);
@@ -17,6 +17,22 @@ function [cbco_with_iva] = validation(cbco_table, zones)
     Aeq = ones(1,numel(zones));
     beq = 0;
 
+    if local
+        % másodrendű kúpfeltétel
+        % norma(NP - ref_net_pos) <= sugár
+        % norma(Asoc * x - bsoc) <= dsoc'*x - gamma
+        A_soc = eye(numel(zones));
+        b_soc = ref_net_pos;
+        d_soc = zeros(numel(zones),1);
+        gamma = -radius;
+
+        soc = secondordercone(A_soc,b_soc,d_soc,gamma);
+
+        options = optimoptions('coneprog', 'Display','none');
+    else
+        options = optimoptions('linprog', 'Display','none');
+    end
+
     while true  
         
         % jobb oldal
@@ -24,19 +40,23 @@ function [cbco_with_iva] = validation(cbco_table, zones)
         b = cbco_with_iva.RAM - cbco_with_iva.IVA;
 
         for row=1:height(cbco_with_iva)
-    
-            f = table2array(cbco_with_iva(row,3:6));
-       
-            options = optimoptions('linprog', 'Display', 'none');
-            [~, fval, ~] = linprog(-f, A, b, Aeq, beq, [], [], options);
-        
+            
+            % sort választunk ki, de oszlopvektorként kell szorozni x-el
+            f = A(row,:)';
+
+            if local
+                [~,fval,~] = coneprog(-f,soc,A,b,Aeq,beq,[],[],options);
+            else
+                [~, fval, ~] = linprog(-f, A, b, Aeq, beq, [], [], options);
+            end
+              
             overload(row) = - fval - cbco_with_iva.RAM0(row);
         end
         
         max_overload = max(overload);
         max_overload_id = find(overload == max_overload);
         
-        % 0.001, különben beragadna a ciklus
+        % kell egy kis érték, különben beragadna a ciklus
         if max_overload > 0.001
             cbco_with_iva.IVA(max_overload_id) = cbco_with_iva.IVA(max_overload_id) + max_overload;
         else

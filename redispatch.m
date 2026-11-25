@@ -5,9 +5,6 @@ function [redispatch_result_table] = redispatch(cbco_table, ref_exp, ...
     % minden csomóponthoz hozzárendelünk egy deltát (döntési változó)
     
     % első eset: bármelyik csomópont bármennyivel
-    % deltára nincs alsó, felső korlát
-    
-    % cbco-król is constraint
     
     % np = node2zone * x
     node2zone = (gsk_for_lsqlin>0)';
@@ -34,21 +31,20 @@ function [redispatch_result_table] = redispatch(cbco_table, ref_exp, ...
 
     A = z2sPTDF_redispatch * node2zone - n2sPTDF_redispatch;
     A_lp = [A, -A];
+
     Fmax   = presolved_cbco_table.Fmax;
     FRM    = presolved_cbco_table.FRM;
     minRAM = presolved_cbco_table.minRAM;
     
     b = Fmax - FRM - minRAM - (n2sPTDF_redispatch - z2sPTDF_redispatch * node2zone) * ref_exp;
     
-    % delták összege 1
+    % delták összege 1 (negatívok is pozitív értéket vesznek fel, emiatt -)
     Aeq = [ones(1, height(ref_exp)), -ones(1, height(ref_exp))];
     beq = 0;
     
     % delta+, delta- csak pozitív értéket kaphat
     lb_case1 = zeros(2*height(ref_exp),1);
     ub_case1 = inf(2*height(ref_exp),1);
-   
-    
     f = ones(2*height(ref_exp),1);
 
     options = optimoptions("linprog", "Display", "none");
@@ -61,11 +57,11 @@ function [redispatch_result_table] = redispatch(cbco_table, ref_exp, ...
 
     % második eset: bármelyik csomópont korlátozott deltával/pmin és pmax
     % deltára alsó és felső korlát
-    % lehetne pmin-re: p-delta legyen nagyobb, mint pmin
-    % lehetne pmax-ra: p+delta legyen kisebb, mint pmax
+    % lehetne pmin-re: p-delta-
+    % lehetne pmax-ra: p+delta+
     
     lb_case2 = zeros(2*height(ref_exp),1);
-    ub_case2 = 30 * ones(2*height(ref_exp),1);
+    ub_case2 = 35 * ones(2*height(ref_exp),1);
  
     x_case2 = linprog(f,A_lp,b,Aeq,beq,lb_case2,ub_case2,options);
 
@@ -74,12 +70,12 @@ function [redispatch_result_table] = redispatch(cbco_table, ref_exp, ...
     
     % harmadik eset: csak adott csomópontok vehetnek részt:
     % a nem résztvevő csomópontok deltája 0-ra rögzítve:
-    % N1, N2, N3, N7, N9, N11,N13, N14 nem szolgáltat redispatch-et
+    % N1, N2, N3, N7, N9, N11, N14 nem szolgáltat redispatch-et
     
     lb_case3 = lb_case2;
     ub_case3 = ub_case2;
-    ub_case3([1 2 3 7 9 11 13 14]) = 0;
-    ub_case3(height(ref_exp) + [1 2 3 7 9 11 13 14]) = 0;
+    ub_case3([1 2 3 7 9 11 14]) = 0;
+    ub_case3(height(ref_exp) + [1 2 3 7 9 11 14]) = 0;
 
     x_case3 = linprog(f,A_lp,b,Aeq,beq,lb_case3,ub_case3,options);
 
